@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-and-tests:
+    name: Static checks and unit tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify source consistency
+        shell: pwsh
+        run: ./scripts/verify-source.ps1
+      - name: Run unit tests (pure core)
+        shell: pwsh
+        run: ./scripts/test.ps1
+
+  build:
+    name: Build ${{ matrix.arch }}
+    needs: static-and-tests
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Xtension (${{ matrix.arch }})
+        shell: pwsh
+        run: ./scripts/build.ps1 -Arch ${{ matrix.arch }}
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Xtension-win-${{ matrix.arch }}
+          path: dist/Xtension-win-${{ matrix.arch }}.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  msbuild-project:
+    name: MSBuild project check
+    needs: static-and-tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+      - name: Build Xtension.csproj (Release, x64)
+        shell: pwsh
+        run: msbuild Xtension.csproj /restore /p:Configuration=Release /p:Platform=x64 /v:minimal /nologo

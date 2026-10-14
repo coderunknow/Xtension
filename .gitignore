@@ -1,0 +1,29 @@
+# Build output and generated files (regenerated from VERSION by scripts/update-version.ps1)
+dist/
+bin/
+obj/
+build/
+TestResults/
+*.exe
+*.dll
+*.pdb
+*.cache
+*.user
+*.suo
+.vs/
+
+# Local logs, temporary and secret material - never commit
+*.log
+*.tmp
+*.bak
+*.pfx
+*.snk
+*.key
+*.pem
+.env
+.env.*
+settings.ini
+
+# OS and editor
+Thumbs.db
+.DS_Store
