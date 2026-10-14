@@ -33,7 +33,7 @@ function Invoke-Csc([string]$Csc, [string[]]$Arguments) {
     $output = @(& $Csc @Arguments 2>&1 | ForEach-Object { "$_" })
     $output | ForEach-Object { Write-Host $_ }
     foreach ($line in $output) {
-        if ($line -match ': error CS') { Write-Host ("::error title=csc::" + $line) }
+        if ($line -match 'error CS\d+') { Write-Host ("::error title=csc::" + $line) }
     }
     if ($LASTEXITCODE -ne 0) { throw "csc.exe failed with exit code $LASTEXITCODE." }
 }
