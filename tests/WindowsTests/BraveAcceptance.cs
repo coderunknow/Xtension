@@ -158,8 +158,16 @@ namespace Xtension.Tests
                     Console.WriteLine("PASS actual mouse close removed only selected runtime identity, no consecutive close");
 
                     ShowWindow(brave, 6);
-                    Wait(delegate { return NativeMethods.IsIconic(brave) && !ProcessIdentity.IsBraveWindow(NativeMethods.GetForegroundRootWindow(), true)
-                        && FindVisibleWindow(app.Id, true) == IntPtr.Zero; }, 5000, "overlay survived minimize with both browser windows minimized");
+                    try
+                    {
+                        Wait(delegate { return NativeMethods.IsIconic(brave) && NativeMethods.IsIconic(second)
+                            && FindVisibleWindow(app.Id, true) == IntPtr.Zero; }, 5000, "overlay survived minimize with both browser windows minimized");
+                    }
+                    catch (AssertionFailure)
+                    {
+                        throw new AssertionFailure("Minimize state: " + DescribeMinimize(brave, second, overlay, app.Id));
+                    }
+                    Console.WriteLine("PASS minimized-window visibility: " + DescribeMinimize(brave, second, overlay, app.Id));
                     ShowWindow(brave, 9);
                     SetForegroundWindow(brave);
                     Wait(delegate { return FindVisibleWindow(app.Id, true) != IntPtr.Zero; }, 7000, "overlay did not recover on restore");
@@ -203,6 +211,18 @@ namespace Xtension.Tests
                     if (!browser.HasExited) { browser.Kill(); browser.WaitForExit(5000); }
                 }
             }
+        }
+
+        private static string DescribeMinimize(IntPtr primary, IntPtr secondary, IntPtr priorOverlay, int appId)
+        {
+            IntPtr foreground = NativeMethods.GetForegroundRootWindow();
+            IntPtr visible = FindVisibleWindow(appId, true);
+            return "primaryIconic=" + NativeMethods.IsIconic(primary) + "; secondaryIconic=" + NativeMethods.IsIconic(secondary)
+                + "; foreground=" + foreground.ToInt64() + "; foregroundIsPrimary=" + (foreground == primary)
+                + "; foregroundIsSecondary=" + (foreground == secondary) + "; foregroundIconic=" + NativeMethods.IsIconic(foreground)
+                + "; foregroundBrave=" + ProcessIdentity.IsBraveWindow(foreground, true)
+                + "; priorOverlay=" + priorOverlay.ToInt64() + "; priorOverlayVisible=" + NativeMethods.IsWindowVisible(priorOverlay)
+                + "; visibleSmallWindow=" + visible.ToInt64();
         }
 
         private static void WaitForOverlay(int appId, IntPtr window, int milliseconds)
