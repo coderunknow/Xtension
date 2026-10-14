@@ -29,3 +29,9 @@ Rules: append new dated entries at the bottom. Do not rewrite or delete earlier 
 
 - Run 38566872550: static checks now pass; "Run unit tests (pure core)" failed. The job log is not downloadable from the sandbox (the log host is outside the allowed hosts), but check-run annotations are available through api.github.com.
 - Scripts now emit `::error` annotations for failed source checks, csc errors, and failing tests, so the failure text can be read through the API.
+
+## 2026-10-14 — CI run 4: static checks, unit tests, MSBuild check passed
+
+- Run 38567945567: "Static checks and unit tests" passed (source checks, csc compile of the core and tests, unit tests run). "MSBuild project check" passed. The x86 and x64 builds failed on csc flag `/deterministic`, which the .NET Framework 4.8 csc does not accept. Removed that flag.
+- Earlier failures in this series were fixed with `/debug:pdbonly` (csc rejects `portable`) and by removing a read of `$LASTEXITCODE` before any native command.
+- Source of these results: check-run annotations via api.github.com (CI logs are not downloadable from the sandbox).

@@ -40,7 +40,7 @@ try {
     Write-Host "Building Xtension $version for Windows $Arch with $csc"
 
     $arguments = @(
-        '/nologo', '/codepage:65001', '/target:winexe', '/optimize+', '/deterministic',
+        '/nologo', '/codepage:65001', '/target:winexe', '/optimize+',
         '/debug:pdbonly', '/langversion:5', '/warn:4',
         "/platform:$Arch", "/win32manifest:$manifest",
         '/r:System.dll', '/r:System.Core.dll', '/r:System.Drawing.dll', '/r:System.Windows.Forms.dll',
