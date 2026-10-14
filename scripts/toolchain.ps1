@@ -10,16 +10,20 @@ function Get-FrameworkDirectory {
     return $directory
 }
 
+function Resolve-FrameworkAssembly([string]$FrameworkDirectory, [string]$FileName) {
+    # On .NET 4.x, WindowsBase and the UIA assemblies live under the WPF subfolder. Check there first.
+    foreach ($candidate in @((Join-Path $FrameworkDirectory "WPF\$FileName"), (Join-Path $FrameworkDirectory $FileName))) {
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
+    throw "Reference assembly $FileName not found under $FrameworkDirectory or its WPF subfolder."
+}
+
 function Get-UiaReferences([string]$FrameworkDirectory) {
-    $wpf = Join-Path $FrameworkDirectory 'WPF'
-    $client = Join-Path $wpf 'UIAutomationClient.dll'
-    $types = Join-Path $wpf 'UIAutomationTypes.dll'
-    $base = Join-Path $FrameworkDirectory 'WindowsBase.dll'
-    # Fall back to simple names; csc resolves them from the GAC when no file is found.
+    # Returns UIAutomationClient, UIAutomationTypes, WindowsBase as full paths. Fails if any is missing.
     return @(
-        $(if (Test-Path -LiteralPath $client) { $client } else { 'UIAutomationClient.dll' }),
-        $(if (Test-Path -LiteralPath $types) { $types } else { 'UIAutomationTypes.dll' }),
-        $(if (Test-Path -LiteralPath $base) { $base } else { 'WindowsBase.dll' })
+        (Resolve-FrameworkAssembly $FrameworkDirectory 'UIAutomationClient.dll'),
+        (Resolve-FrameworkAssembly $FrameworkDirectory 'UIAutomationTypes.dll'),
+        (Resolve-FrameworkAssembly $FrameworkDirectory 'WindowsBase.dll')
     )
 }
 
