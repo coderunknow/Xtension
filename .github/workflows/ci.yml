@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      published_tag:
+        description: 'Optional published tag: check out its exact source and test its downloaded EXEs'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -20,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.published_tag || github.event.pull_request.head.sha || github.sha }}
       - name: Verify source consistency
         shell: pwsh
         run: ./scripts/verify-source.ps1
@@ -46,7 +52,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.published_tag || github.event.pull_request.head.sha || github.sha }}
       - name: Build Xtension (${{ matrix.arch }})
         shell: pwsh
         run: ./scripts/build.ps1 -Arch ${{ matrix.arch }}
@@ -70,7 +76,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.published_tag || github.event.pull_request.head.sha || github.sha }}
       - uses: microsoft/setup-msbuild@v2
       - name: Build Xtension.csproj (Release, x64)
         shell: pwsh
@@ -83,7 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.published_tag || github.event.pull_request.head.sha || github.sha }}
       - uses: actions/download-artifact@v4
         with:
           pattern: Xtension-win-*
@@ -107,12 +113,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.published_tag || github.event.pull_request.head.sha || github.sha }}
       - name: Build candidate and Windows harness
         shell: powershell
         run: |
           ./scripts/build.ps1 -Arch ${{ matrix.arch }}
           ./scripts/test-windows.ps1 -Arch ${{ matrix.arch }}
+      - name: Substitute checksum-verified published EXE for runtime acceptance
+        if: github.event_name == 'workflow_dispatch' && inputs.published_tag != ''
+        shell: powershell
+        env:
+          PUBLISHED_TAG: ${{ inputs.published_tag }}
+          TEST_ARCH: ${{ matrix.arch }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = $env:PUBLISHED_TAG
+          $version = (Get-Content -LiteralPath VERSION -Raw).Trim()
+          if ($tag -ne "v$version") { throw 'Published tag must match checked-out VERSION.' }
+          $asset = "Xtension-$tag-win-$($env:TEST_ARCH).exe"
+          $destination = 'dist/published-runtime'
+          New-Item -ItemType Directory -Force -Path $destination | Out-Null
+          & gh release download $tag --pattern $asset --pattern SHA256SUMS.txt --dir $destination
+          if ($LASTEXITCODE -ne 0) { throw 'Published binary download failed.' }
+          $line = @(Get-Content -LiteralPath (Join-Path $destination 'SHA256SUMS.txt') | Where-Object { $_.EndsWith("  $asset") })
+          if ($line.Count -ne 1) { throw 'Published binary missing or duplicated in checksum manifest.' }
+          $expected = ($line[0] -split '  ', 2)[0]
+          $actual = (Get-FileHash -LiteralPath (Join-Path $destination $asset) -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw 'Published EXE checksum mismatch.' }
+          Copy-Item -LiteralPath (Join-Path $destination $asset) -Destination "dist/Xtension-win-$($env:TEST_ARCH).exe" -Force
+          Write-Host "::notice title=Published binary under test::$asset sha256=$actual"
       - name: Run shipped candidate against isolated Brave profile
         shell: powershell
         run: ./scripts/test-brave.ps1 -Arch ${{ matrix.arch }}

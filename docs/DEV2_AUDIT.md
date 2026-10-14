@@ -67,3 +67,20 @@ Real-Brave environment: release v1.97.56, binary ProductVersion 155.1.97.56, Win
 Publication assessment: the cache cause is established by actual Windows reproduction plus real-Brave success with both EXEs; this supports a prerelease, not universal acceptance. No new known critical/high implementation defect remains from this audit. Existing non-atomic input risk remains explicit. Tag only the final green candidate after source/version/clean-tree/tag-absence checks. No PR merge.
 
 External reviews are NOT green reviews: Kilo reports ACTION_REQUIRED/out-of-credits, Qodo's trial ended, Copilot quota was exhausted and CodeRabbit skipped. These are optional review services, not jobs in repository CI. Main metadata reports unprotected/empty required contexts; repository ruleset listing is empty. Required-status administrative endpoint returned HTTP 403; no protections, reviews or checks were modified or bypassed. Owner review remains recommended before merging.
+
+## Published result
+
+- **Release:** [Xtension v0.1.0-dev2](https://github.com/coderunknow/Xtension/releases/tag/v0.1.0-dev2), published 2026-10-14T14:01:35Z; prerelease, not draft, not latest.
+- **Exact release source:** `816d7664b79d8927731305c8f974533d65bae714` ([tag tree](https://github.com/coderunknow/Xtension/tree/v0.1.0-dev2)). Tag was not moved or replaced.
+- **Final candidate CI:** [38576245878](https://github.com/coderunknow/Xtension/actions/runs/38576245878), all seven repository jobs passed, including PS5.1 parity and real-Brave x86/x64.
+- **Release workflow:** [38576648574](https://github.com/coderunknow/Xtension/actions/runs/38576648574), all jobs passed, including downloading published assets again and validating hashes. GitHub REST asset digests match the verified hashes below.
+- **Review branch:** `arena/8f3060a9-xtension`, PR #2 open and unmerged. Post-release history/verification updates on that branch do not alter the released source/tag.
+
+| Asset | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `Xtension-v0.1.0-dev2-win-x86.exe` | 74752 | `cfedbd004ce7cc5b68db937ea31c4a3115257aedf772e3a95a360f1cb66f3ce5` |
+| `Xtension-v0.1.0-dev2-win-x64.exe` | 73728 | `25c836137928a274380fd63d2650499df06b92103c4ef30e834c907a5620dc9c` |
+| `Xtension-v0.1.0-dev2-source.zip` | 107111 | `450cc1b214cdba0c72a32872c830dee305a72de0f7a0858ff8bd1f00d9604122` |
+| `SHA256SUMS.txt` | 296 | `20311a8959fab00832e8c754668b13c2167b514665dc48cce06159ee0e4d6e95` |
+
+Post-publication actual-binary smoke can be requested with `gh workflow run ci.yml --ref arena/8f3060a9-xtension -f published_tag=v0.1.0-dev2`. It checks out tag source, verifies downloaded EXE checksums and runs those published bytes against isolated Brave instead of substituting a newly compiled app. Its result is recorded in the append-only work log after completion.
