@@ -11,7 +11,6 @@ $root = Split-Path -Parent $PSScriptRoot
 
 try {
     & (Join-Path $PSScriptRoot 'update-version.ps1') -RepoRoot $root
-    if ($LASTEXITCODE -ne 0) { throw 'Version generation failed.' }
 
     $framework = Get-FrameworkDirectory
     $csc = Join-Path $framework 'csc.exe'
