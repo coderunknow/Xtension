@@ -28,6 +28,12 @@ jobs:
         shell: pwsh
         run: ./scripts/test.ps1
 
+      - name: Windows PowerShell 5.1 source and test parity
+        shell: powershell
+        run: |
+          ./scripts/verify-source.ps1
+          ./scripts/test.ps1
+
   build:
     name: Build ${{ matrix.arch }}
     timeout-minutes: 10

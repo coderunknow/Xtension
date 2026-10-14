@@ -23,11 +23,13 @@ $profile = Join-Path $directory "profile-$Arch"
 try {
     $results = @(& $test --brave $brave $app $profile 2>&1 | ForEach-Object { "$_" })
     $code = $LASTEXITCODE
+    $evidence = New-Object System.Collections.Generic.List[string]
     foreach ($line in $results) {
-        if ($line -like 'PASS *' -or $line -like 'Brave binary*') { Write-Host ("::notice title=Real Brave evidence::" + $line) }
+        if ($line -like 'PASS *' -or $line -like 'Brave binary*') { $evidence.Add($line) | Out-Null }
         elseif ($line -like 'FAIL *') { Write-Host ("::error title=Real Brave evidence::" + $line) }
         # Do not forward browser stderr/provider text to persistent workflow logs.
     }
+    Write-Host ("::notice title=Real Brave evidence::" + ($evidence -join " | "))
     if ($code -ne 0) { throw "Real-Brave smoke failed ($code)." }
 } finally {
     # This script is for a disposable CI runner, never a personal Windows desktop.

@@ -2,20 +2,21 @@
 
 Xtension is a small Windows tray app for Brave. It shows one custom **×** on the selected horizontal tab, so you do not close a tab by accident. The × moves when you change tabs. It appears only when Xtension can confirm which tab is active.
 
-> **Status: `v0.1.0-dev2` candidate, not yet published.** The latest published prerelease is dev1. The UIA cache defect has a source-level correction; real-Brave acceptance is still unverified. See [Verification](#verification).
+> **Status: prerelease `v0.1.0-dev2`.** The UIA cache failure is corrected and Windows CI includes real-Brave smoke tests with both EXEs. This is not a guarantee across all Brave versions or desktop configurations. See [Verification](#verification) and the Releases page for publication state.
 
 ## Requirements
 
 - Windows 10 or 11, x86 or x64.
 - Brave (Chromium) with horizontal tabs.
+- .NET Framework 4.8 runtime.
 - No administrator rights. Xtension runs as your user.
 
 ## Install
 
-Download `Xtension-v0.1.0-dev1-win-x64.exe` (or `-win-x86.exe` for 32-bit Windows) from the [Releases](https://github.com/coderunknow/Xtension/releases) page. Check it against `SHA256SUMS.txt`:
+Download `Xtension-v0.1.0-dev2-win-x64.exe` (or `-win-x86.exe` for 32-bit Windows) from the [Releases](https://github.com/coderunknow/Xtension/releases) page. Check it against `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\Xtension-v0.1.0-dev1-win-x64.exe -Algorithm SHA256
+Get-FileHash .\Xtension-v0.1.0-dev2-win-x64.exe -Algorithm SHA256
 ```
 
 Run it. A tray icon appears. Open the dashboard from the tray menu.
@@ -48,7 +49,7 @@ Native close buttons: if Brave's own "Always hide tab close button" setting is o
 
 ## Build and test
 
-Requires Windows PowerShell 5.1 or PowerShell 7 and the .NET Framework 4.8 Developer Pack or Build Tools.
+Requires Windows PowerShell 5.1 or PowerShell 7 and the .NET Framework 4.8 Developer Pack or Build Tools. The CI-only `test-brave.ps1` uses a disposable browser profile and refuses personal desktops.
 
 ```powershell
 ./scripts/verify-source.ps1      # static checks
@@ -68,11 +69,12 @@ The version comes only from `VERSION`. Edit that file to change it.
 
 | Area | Status |
 | --- | --- |
-| Static checks (`verify-source.ps1`) | Run in CI on each push and pull request. |
+| Static checks (`verify-source.ps1`) | Run in CI on main pushes and pull requests. |
 | Unit tests (pure core) | Run in CI. |
-| x86 and x64 builds | Run in CI. Candidate artifacts are not a published release. |
+| x86 and x64 builds | Run in CI. Verified in CI; release builds are produced by the tag workflow. |
 | Windows UIA fixture / scaled-font layout | Run in CI in both architectures; not real-browser or physical-monitor validation. |
-| Behaviour in Brave (×, click, close, DPI, startup, tray) | **Not verified.** Requires manual testing on Windows with Brave. |
+| Real Brave smoke | **Passed** with v1.97.56, x86/x64 EXEs, Windows runner at 96 DPI: overlay, switches, multiple windows, focus changes, modifiers, exact selected-tab close, window geometry, many tabs and long title. |
+| Full desktop acceptance | **Incomplete.** Physical DPI/multiple monitors, rapid-click race stress, tray/startup/graceful exit and unsupported arrangements still need manual coverage. |
 
 Release notes state which items were verified for each release.
 

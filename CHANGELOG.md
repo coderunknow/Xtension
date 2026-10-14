@@ -2,9 +2,9 @@
 
 All notable changes are listed here. Versions follow SemVer. The version in `VERSION` is the single source.
 
-## [0.1.0-dev2] - Unreleased candidate
+## [0.1.0-dev2] - 2026-10-14
 
-Windows x86/x64, .NET Framework 4.8, C# 5. Publication is gated on verification.
+Prerelease. Windows x86/x64, .NET Framework 4.8, C# 5. No dependency added.
 
 ### Fixed
 
@@ -19,7 +19,13 @@ Windows x86/x64, .NET Framework 4.8, C# 5. Publication is gated on verification.
 
 - Added pure-core deadline, privacy, ambiguity, geometry and close-guard boundary tests.
 - Added Windows synthetic UIA cache/scanner, overlay, diagnostic refresh and scaled-font/layout tests, in x86 and x64. These are NOT real-Brave acceptance.
-- Candidate CI results pending. No Windows/Brave runtime test was performed locally. Actual user exception, Brave version, mixed-monitor DPI behavior and real click-to-close remain unverified; publication decision follows final checks.
+- CI [38575630606](https://github.com/coderunknow/Xtension/actions/runs/38575630606) passed source checks, 38 core tests, six Windows regressions in each architecture, both builds, MSBuild and packaging/provenance/checksum checks. Final release-commit CI is linked from PR #2.
+- **Real Brave smoke passed:** actual x86 and x64 EXEs with official Brave v1.97.56 on Windows OS 10.0.26100.0 at 96 DPI, isolated temporary profiles. Startup with Brave already running, overlay position, three tab switches, two windows, focus away/back, Shift/Alt/Win rejection, mouse close removing only the selected runtime identity, minimize/restore/move/resize/maximize, twelve tabs and a long synthetic title.
+- Synthetic UIA reproduces the old `Cached.ControlType` InvalidOperationException / HRESULT `0x80131509`; explicit caching succeeds. This supports the missing-button correction, but the user's exact exception/environment was not captured.
+- The layout tests exposed and then verified the correction for a clipped startup control at 200% scaled text in a narrow window. Tests exercise 100/125/150/200% font sizes; these are not physical-monitor DPI certification or a visual diacritics review.
+- Not fully accepted: physical mixed-monitor DPI, native 32-bit Windows, rapid physical double-clicks/tab switches during validation, intentionally unsupported tab layouts, real hung-provider behavior, tray/startup registration and graceful shutdown. Core/worker safety tests cover deterministic rejection and recovery, not those complete runtime scenarios. Existing post-validation input race remains documented.
+- Optional external code reviews were unavailable (Kilo credits, Qodo trial, Copilot quota; CodeRabbit skipped). No review failure was bypassed or described as a successful review; repository CI passes independently. See `docs/DEV2_AUDIT.md`.
+- Packaging now refuses stale/dirty/wrong-version/wrong-architecture binaries using commit/hash provenance and checksums. Release workflow additionally downloads published assets and verifies them.
 
 ## [0.1.0-dev1] - 2026-10-14
 

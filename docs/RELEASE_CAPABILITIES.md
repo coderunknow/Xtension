@@ -14,6 +14,12 @@
 - A tab switch in the short window between confirmation and keystroke cannot be prevented by any available API. This residual risk is recorded in DESIGN_LOG.md.
 - Prerelease. Real-Brave behaviour is verified only where the release's CHANGELOG Verification section says so.
 
-## Candidate verification boundary
+## Verification boundary
 
-The dev2 candidate corrects explicit UIA cache navigation and adds synthetic Windows regression tests. A fixture with two tabs is not Brave: no claim is made that the user's exact failure, Brave updates, click-to-close, physical DPI/multiple monitors, or all Vietnamese text rendering has been accepted on a real installation. Current outcome and release decision are recorded in `docs/DEV2_AUDIT.md` and the changelog. Scan failures include privacy-safe operation/type/HRESULT metadata; raw provider messages are not logged.
+Windows CI covers both architectures, 38 core tests, six synthetic Windows UIA/layout/state tests per architecture, and packaging provenance/checksums. The old cache-less navigation reproduces `InvalidOperationException` / `0x80131509`; the corrected scanner succeeds.
+
+Actual x86/x64 EXEs were exercised against official Brave v1.97.56 (binary product version 155.1.97.56) in isolated profiles on Windows OS 10.0.26100.0 at 96 DPI. Verified: button visibility/placement, tab switches, multiple windows, focus changes, Shift/Alt/Win rejection, mouse close of exactly the selected runtime identity, minimize/restore/move/resize/maximize, twelve tabs and long synthetic title. The owner's exact Brave build and error were not available.
+
+Still unverified: physical mixed-monitor DPI, native 32-bit Windows, rapid-click and tab-switch race stress, pinned/vertical/scrolled layouts on real Brave, actual hung-provider recovery, tray/startup integration and graceful exit. Scaled-font layout assertions are not visual certification of every Vietnamese glyph. No universal bug-free claim is made. Raw provider messages, browsing titles and URLs are not logged; diagnostics uses operation/type/HRESULT and sanitized application frames. Optional external review services did not perform a review because of credit/quota/eligibility limits.
+
+See `docs/DEV2_AUDIT.md` for findings and the acceptance matrix. Release assets are x86/x64 EXEs, a source ZIP and SHA256SUMS.txt. The tag workflow packages exact-commit builds and downloads published assets again to verify hashes.
