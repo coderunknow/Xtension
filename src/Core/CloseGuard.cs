@@ -21,6 +21,7 @@ namespace Xtension
         /// <summary>Screen coordinates of the physical click on the overlay.</summary>
         public Point Click;
         public long NowMs;
+        public long StartedMs = Clock.Never;
         /// <summary>Clock time of the last Ctrl+W, or the sentinel value that means "never".</summary>
         public long LastSentMs;
     }
@@ -49,6 +50,8 @@ namespace Xtension
     {
         public static CloseDecision Evaluate(CloseRequest request)
         {
+            if (!ScanSafety.IsFresh(request.StartedMs, request.NowMs, AppInfo.CloseValidationTimeoutMs))
+                return CloseDecision.Reject("validation expired before delivery");
             if (!request.OverlayEnabled) return CloseDecision.Reject("overlay disabled");
             if (!request.EpochCurrent) return CloseDecision.Reject("window state changed during validation");
             if (request.LastSentMs != Clock.Never && request.NowMs - request.LastSentMs < AppInfo.CloseCooldownMs)

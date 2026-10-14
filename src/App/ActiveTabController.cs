@@ -13,6 +13,7 @@ namespace Xtension
         public bool Stalled;
         public string IdleReason = string.Empty;
         public string Notice = string.Empty;
+        public string HiddenReason = string.Empty;
         /// <summary>Latest accepted scan. Null before the first scan or while the overlay is disabled.</summary>
         public ScanResult Scan;
     }
@@ -54,6 +55,8 @@ namespace Xtension
         private long _lastConfirmedMs = Clock.Never;
         private long _lastSentMs = Clock.Never;
         private bool _closeInFlight;
+        private long _closeRequestId;
+        private string _overlayFailure = string.Empty;
         private long _closeStartedMs = Clock.Never;
 
         /// <summary>Raised on the UI thread whenever something visible may have changed.</summary>
@@ -85,9 +88,16 @@ namespace Xtension
                 InvalidateConfirmation();
             }
 
+            if (_closeInFlight && Clock.HasElapsed(_closeStartedMs, AppInfo.CloseValidationTimeoutMs))
+            {
+                _notice = "Xác nhận nhấp đã hết hạn. Không tab nào bị đóng.";
+                InvalidateConfirmation();
+            }
             bool isBrave = ProcessIdentity.IsBraveWindow(foreground);
             bool minimized = foreground != IntPtr.Zero && NativeMethods.IsIconic(foreground);
-            _braveInForeground = isBrave && !minimized;
+            bool available = isBrave && !minimized;
+            if (_braveInForeground != available) InvalidateConfirmation();
+            _braveInForeground = available;
             if (isBrave) _lastBraveWindow = foreground;
 
             if (!_enabled)
@@ -95,6 +105,7 @@ namespace Xtension
                 HideOverlay();
                 _targetWindow = IntPtr.Zero;
                 CheckStall();
+                NotifyChanged();
                 return;
             }
 
@@ -107,6 +118,7 @@ namespace Xtension
                     : "Brave chưa ở phía trước. Chuyển sang Brave để hiện nút ×; mở bảng điều khiển để xem trạng thái gần nhất.";
                 RequestDashboardScanIfVisible(now);
                 CheckStall();
+                NotifyChanged();
                 return;
             }
 
@@ -116,21 +128,14 @@ namespace Xtension
             // Hide when the confirmation is older than the stale window (for example, a stalled UIA call).
             if (_overlay.Visible && Clock.HasElapsed(_lastConfirmedMs, AppInfo.ScanStaleMs)) HideOverlay();
 
-            if (!_overlayWorker.IsBusy && Clock.HasElapsed(_lastOverlayRequestMs, AppInfo.ScanIntervalMs))
+            if (!_closeInFlight && !_overlayWorker.IsBusy && Clock.HasElapsed(_lastOverlayRequestMs, AppInfo.ScanIntervalMs))
             {
                 _lastOverlayRequestMs = now;
                 Submit(_overlayWorker, ScanKind.Overlay, foreground, Point.Empty);
             }
 
-            if (_closeInFlight && Clock.HasElapsed(_closeStartedMs, AppInfo.CloseValidationTimeoutMs))
-            {
-                // The late result, if it ever arrives, must not be applied: bumping the epoch discards it.
-                _closeInFlight = false;
-                AppLog.Warn("Close validation did not finish within the timeout; the click was ignored.");
-                InvalidateConfirmation();
-            }
-
             CheckStall();
+            NotifyChanged();
         }
 
         public void SetEnabled(bool enabled)
@@ -160,13 +165,28 @@ namespace Xtension
             snapshot.IdleReason = _idleReason;
             snapshot.Notice = _notice;
             snapshot.Scan = _latest;
+            snapshot.HiddenReason = GetHiddenReason();
             return snapshot;
+        }
+
+        private string GetHiddenReason()
+        {
+            if (_overlay.Visible) return string.Empty;
+            if (!_enabled) return "Nút × đang tắt.";
+            if (_stalled) return "UI Automation chưa phản hồi; nút × bị ẩn. Không có lệnh đóng tab.";
+            if (!_braveInForeground) return _idleReason;
+            if (_closeInFlight) return "Đang xác nhận lần nhấp; nút × tạm ẩn.";
+            if (!Clock.HasElapsed(_lastSentMs, AppInfo.CloseCooldownMs)) return "Đang chờ sau lệnh đóng tab để tránh đóng liên tiếp.";
+            if (!string.IsNullOrEmpty(_overlayFailure)) return _overlayFailure;
+            if (_latest == null) return "Đang chờ quét cho trạng thái cửa sổ hiện tại.";
+            if (_latest.Outcome != ScanOutcome.Ready) return _latest.Message;
+            return "Kết quả xác nhận đã cũ hoặc cửa sổ đã thay đổi; đang chờ quét mới.";
         }
 
         private void RequestDashboardScanIfVisible(long now)
         {
             if (!_dashboardVisible || _lastBraveWindow == IntPtr.Zero) return;
-            if (!NativeMethods.IsWindow(_lastBraveWindow)) return;
+            if (!NativeMethods.IsWindow(_lastBraveWindow) || !ProcessIdentity.IsBraveWindow(_lastBraveWindow)) return;
             if (_overlayWorker.IsBusy || !Clock.HasElapsed(_lastDashboardRequestMs, AppInfo.DashboardScanIntervalMs)) return;
 
             _lastDashboardRequestMs = now;
@@ -198,6 +218,12 @@ namespace Xtension
 
             // A result from an older state (different window, enable toggle, or keystroke) must not touch the overlay.
             if (request.Epoch != _epoch) return;
+            if (!ScanSafety.IsFresh(request.StartedMs, Clock.NowMs, AppInfo.ScanStaleMs))
+            {
+                InvalidateConfirmation();
+                NotifyChanged();
+                return;
+            }
 
             if (request.Kind == ScanKind.Dashboard)
             {
@@ -206,15 +232,30 @@ namespace Xtension
                 return;
             }
 
-            if (!_enabled || !_braveInForeground || request.Window != _targetWindow) return;
+            if (!_enabled || !_braveInForeground || _closeInFlight || request.Window != _targetWindow) return;
+            if (NativeMethods.GetForegroundRootWindow() != request.Window || NativeMethods.IsIconic(request.Window)
+                || !ProcessIdentity.IsBraveWindow(request.Window))
+            {
+                InvalidateConfirmation();
+                NotifyChanged();
+                return;
+            }
 
             ScanResult result = completion.Result;
             _latest = result;
             bool coolingDown = !Clock.HasElapsed(_lastSentMs, AppInfo.CloseCooldownMs);
             if (result.Outcome == ScanOutcome.Ready && !coolingDown)
             {
-                _lastConfirmedMs = Clock.NowMs;
-                ShowOverlayFor(result);
+                if (result.WindowBounds != NativeMethods.GetWindowBounds(request.Window)
+                    || result.Dpi != NativeMethods.GetWindowDpi(request.Window))
+                {
+                    InvalidateConfirmation();
+                }
+                else
+                {
+                    _lastConfirmedMs = request.StartedMs;
+                    ShowOverlayFor(result);
+                }
             }
             else
             {
@@ -233,7 +274,13 @@ namespace Xtension
                 HideOverlay();
                 return;
             }
-            _overlay.ShowAt(target);
+            string failure;
+            if (!_overlay.ShowAt(target, out failure))
+            {
+                _overlayFailure = "Không hiện được nút ×: " + failure;
+                AppLog.WarnThrottled("overlay-show", failure);
+            }
+            else _overlayFailure = string.Empty;
         }
 
         private void OnOverlayClicked(Point screenPoint)
@@ -259,12 +306,14 @@ namespace Xtension
                 return;
             }
 
+            InvalidateConfirmation();
             ScanRequest request = new ScanRequest(++_nextRequestId, ScanKind.Close, _epoch, foreground, screenPoint);
             if (!_closeWorker.TrySubmit(request))
             {
                 AppLog.Warn("Close validation lane was busy; the click was ignored.");
                 return;
             }
+            _closeRequestId = request.Id;
             _closeInFlight = true;
             _closeStartedMs = Clock.NowMs;
             _notice = "Đang xác nhận tab đang chọn…";
@@ -273,8 +322,9 @@ namespace Xtension
 
         private void OnCloseValidated(ScanCompletion completion)
         {
-            _closeInFlight = false;
             ScanRequest request = completion.Request;
+            if (!_closeInFlight || request.Id != _closeRequestId) return;
+            _closeInFlight = false;
             ScanResult scan = completion.Result;
 
             if (request.Epoch != _epoch)
@@ -291,14 +341,17 @@ namespace Xtension
             check.EpochCurrent = true;
             check.ScannedWindow = request.Window;
             check.ForegroundNow = foreground;
-            check.ForegroundIsBrave = ProcessIdentity.IsBraveWindow(foreground);
+            check.ForegroundIsBrave = ProcessIdentity.IsBraveWindow(foreground, true);
             check.Minimized = foreground != IntPtr.Zero && NativeMethods.IsIconic(foreground);
             check.BlockingModifierDown = KeyboardInjector.BlockingModifierDown();
             check.Scan = scan;
             check.Click = request.ClickScreen;
             check.NowMs = Clock.NowMs;
+            check.StartedMs = request.StartedMs;
             check.LastSentMs = _lastSentMs;
 
+            if (scan.WindowBounds != NativeMethods.GetWindowBounds(request.Window)
+                || scan.Dpi != NativeMethods.GetWindowDpi(request.Window)) check.EpochCurrent = false;
             CloseDecision decision = CloseGuard.Evaluate(check);
             if (!decision.Allowed)
             {
@@ -310,6 +363,14 @@ namespace Xtension
             }
 
             string failure;
+            // Re-read immediately before injection; never rely only on the last timer tick.
+            if (NativeMethods.GetForegroundRootWindow() != request.Window || KeyboardInjector.BlockingModifierDown())
+            {
+                InvalidateConfirmation();
+                _notice = "Cửa sổ hoặc phím bổ trợ đã thay đổi. Không tab nào bị đóng.";
+                NotifyChanged();
+                return;
+            }
             bool sent = KeyboardInjector.SendControlW(out failure);
             _lastSentMs = check.NowMs;
             InvalidateConfirmation();
@@ -334,6 +395,10 @@ namespace Xtension
         private void InvalidateConfirmation()
         {
             _epoch++;
+            _closeInFlight = false;
+            _closeRequestId = 0;
+            _latest = null;
+            _overlayFailure = string.Empty;
             _lastConfirmedMs = Clock.Never;
             HideOverlay();
         }

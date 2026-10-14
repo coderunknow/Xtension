@@ -16,6 +16,7 @@ namespace Xtension
     internal sealed class ScanRequest
     {
         public readonly long Id;
+        public readonly long StartedMs = Clock.NowMs;
         public readonly ScanKind Kind;
         /// <summary>Controller state epoch at request time. Results from an older epoch are discarded.</summary>
         public readonly long Epoch;
@@ -93,20 +94,31 @@ namespace Xtension
             {
                 if (_stopping || _pending != null || _running != null) return false;
                 _pending = request;
+                _wake.Set();
+                return true;
             }
-            _wake.Set();
-            return true;
         }
 
         public void Dispose()
         {
-            lock (_gate) { _stopping = true; }
-            _wake.Set();
+            lock (_gate)
+            {
+                if (_stopping) return;
+                _stopping = true;
+                _pending = null;
+                _wake.Set();
+            }
             // Do not wait for a stuck UIA call. The thread is a background thread, so process exit is not blocked.
             _thread.Join(300);
         }
 
         private void Run()
+        {
+            try { RunLoop(); }
+            finally { _wake.Dispose(); }
+        }
+
+        private void RunLoop()
         {
             while (true)
             {
@@ -130,7 +142,7 @@ namespace Xtension
                 catch (Exception ex)
                 {
                     result = ScanResult.Idle(request.Window, ScanOutcome.Error, "Quét UI Automation gặp lỗi bất ngờ. Đã ẩn nút ×.");
-                    result.Error = ex.GetType().Name + ": " + ex.Message;
+                    result.Error = ScanSafety.DescribeError("ScanWorker.Scan", ex);
                 }
 
                 lock (_gate)

@@ -17,31 +17,37 @@ namespace Xtension
         private static readonly object Gate = new object();
         private static IntPtr _cachedWindow = IntPtr.Zero;
         private static bool _cachedVerdict;
+        private static uint _cachedProcessId;
         private static long _cachedAtMs = Clock.Never;
 
         public static bool IsBraveWindow(IntPtr window)
         {
+            return IsBraveWindow(window, false);
+        }
+
+        public static bool IsBraveWindow(IntPtr window, bool fresh)
+        {
             if (window == IntPtr.Zero) return false;
+            uint processId;
+            if (NativeMethods.GetWindowThreadProcessId(window, out processId) == 0 || processId == 0) return false;
             lock (Gate)
             {
-                if (window == _cachedWindow && !Clock.HasElapsed(_cachedAtMs, CacheLifetimeMs)) return _cachedVerdict;
+                if (!fresh && _cachedVerdict && window == _cachedWindow && processId == _cachedProcessId && !Clock.HasElapsed(_cachedAtMs, CacheLifetimeMs)) return _cachedVerdict;
             }
 
-            bool verdict = Query(window);
+            bool verdict = Query(processId);
             lock (Gate)
             {
                 _cachedWindow = window;
+                _cachedProcessId = processId;
                 _cachedVerdict = verdict;
                 _cachedAtMs = Clock.NowMs;
             }
             return verdict;
         }
 
-        private static bool Query(IntPtr window)
+        private static bool Query(uint processId)
         {
-            uint processId;
-            NativeMethods.GetWindowThreadProcessId(window, out processId);
-            if (processId == 0) return false;
 
             IntPtr process = NativeMethods.OpenProcess(ProcessQueryLimitedInformation, false, processId);
             if (process == IntPtr.Zero) return false;

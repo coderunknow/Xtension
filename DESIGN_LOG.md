@@ -68,3 +68,36 @@ Decisions and outcomes, recorded without editing earlier entries:
 - What is not verified: runtime behavior in Brave, the overlay's placement and click-to-close, DPI scaling, the Brave setting interaction, and tray and dashboard behavior. The Brave setting "Always hide tab close button" is not confirmed in any source gathered.
 - Performance claims: none. Measurements are still needed on a device.
 - Open items: the six earlier Vietnamese request quotes are still not recorded verbatim (the owner must supply them). PR #1 is open for review; its merge is the owner's decision.
+
+## Entry 008 — dev2 audit and runtime-failure lead (2026-10-14)
+
+Original request, verbatim:
+
+> Cho prompt AI fix lỗi [https://github.com/coderunknow/Xtension](https://github.com/coderunknow/Xtension)
+> Là không thấy nút x hiện ra dù đang ở đúng tab.
+> Và khá nhiều vấn đề khác.
+> Cho prompt để AI build v0.1.0-dev2 để đảm bảo bug-free.
+> Hỏi tôi trước khi cho prompt.
+
+Subsequent clarification, verbatim:
+
+> Các câu trả lời để chuẩn bị prompt Xtension v0.1.0-dev2:
+> 1. Các lỗi cần xử lý: AI tự audit toàn bộ repository, tìm và sửa các lỗi khác ngoài lỗi nút × không xuất hiện.
+> một số chữ bị che, hiện tại không có vấn đề nhiều nhưng lâu dần có thể gây technical debt khá rủi ro.
+> 2. Thông tin chẩn đoán: chuẩn đoán trống.
+> 3. Phạm vi bàn giao: Sửa, test, build; sau khi đủ điều kiện tạo tag v0.1.0-dev2 và GitHub prerelease; không merge PR.
+> 4. Kiểm thử: Tự động và kiểm thử thực tế Brave trên Windows nếu môi trường cho phép.
+> Hãy viết prompt AI chất lượng cao cho Xtension v0.1.0-dev2 theo đúng các câu trả lời này, kiểm tra repository context đã biết, không hỏi lại thông tin đã cung cấp.
+
+Additional reported observation, verbatim:
+
+> In Xtension's Diagnostics window, the application displays: “Quét UI animation thất bại, đã ẩn nút x” (the exact displayed wording and capitalization must be verified against the actual application).
+
+- Checkout baseline is main `804a256c273e830a6e2e862e3775fbf5596354b6`; remote PR #1 is now merged, unlike earlier historical notes. The existing dev1 tag/release and CI are real. This session works only on `arena/8f3060a9-xtension`; no merge is authorized.
+- Actual source wording is `Quét UI Automation thất bại. Đã ẩn nút ×.` The catch in UiaTabScanner sets Error; the worker posts it, the controller hides the overlay, and Diagnostics displays Message and Error. No user exception type, HRESULT, stack, Brave version or Windows/DPI configuration was supplied. Those are NOT inferred from the generic message.
+- Concrete defect: TreeWalker.GetFirstChild/GetNextSibling without the CacheRequest argument use the default cache, not the active request. The scanner then reads Cached.ControlType (and tab properties). Inspected upstream dotnet/wpf TreeWalker.cs and AutomationElement.Navigate via GitHub API: null navigation request maps to DefaultUiaCacheRequest. Pass the explicit per-scan request on both navigation calls, retain the ControlView, MTA worker, leaf exclusions, and original limits. Add a real Windows synthetic UIA test that reproduces the old exception and exercises the corrected scanner; this is not Brave acceptance.
+- Bound enforcement: depth truncation previously looked complete; a slow final navigation escaped the elapsed-budget check. Both now fail closed. Element disappearance is classified as incomplete, retaining safe operation/error metadata.
+- Privacy: provider exception messages can include browsing data. Persistent diagnostics now use operation + exception type + HRESULT + up to four application method frames, never arbitrary message/Data/inner exception text or stack paths. No actual provider message is retained, even in the diagnostic UI. Counts and operation are preserved on failure.
+- Safety: accept results only inside a request-age deadline, recheck the real foreground and physical window geometry/DPI on delivery, reject unknown selection alongside a known selection, require the overlay to fit fully inside the tab, and cancel pending overlay scans on a close click. Do not rely on UI timer scheduling to expire a close result. Preserve CloseGuard, fresh close scan, exact click, modifiers, epoch and cooldown. PID-aware identity caching does not cache failed queries; close identity bypasses the cache. Native placement failure is checked and surfaced, not treated as visible success.
+- UI: retain hierarchy but replace fixed dashboard rows with measured wrapping text and auto-height flow rows inside a scrollable viewport. Long titles are selectable; diagnostics status/errors are read-only scrollable text, counters/error changes invalidate rendering, column headers are measured and tab titles have tooltips. Fit initial windows to the working area. Synthetic scaled-font/layout assertions are planned; physical DPI and Vietnamese visual rendering still require Windows desktop acceptance.
+- Release gates: all real scripts/builds, C# 5, Windows x86/x64, MSBuild and final candidate CI must pass. No tag until adequate evidence supports the primary symptom; do not equate a synthetic fixture with Brave. No mathematical bug-free claim. Remaining risks and the final publication decision will be appended after observed checks.

@@ -74,19 +74,29 @@ namespace Xtension
         }
 
         /// <summary>Shows the button at a screen rectangle without activating it. Idempotent for an unchanged rectangle.</summary>
-        public void ShowAt(Rectangle bounds)
+        public bool ShowAt(Rectangle bounds, out string failure)
         {
-            if (!Visible) Show();
-            if (Bounds == bounds) return;
-            NativeMethods.SetWindowPos(
-                Handle,
-                NativeMethods.HwndTopmost,
-                bounds.X,
-                bounds.Y,
-                bounds.Width,
-                bounds.Height,
+            failure = null;
+            if (bounds.Width <= 0 || bounds.Height <= 0)
+            {
+                Hide();
+                failure = "Overlay bounds are empty.";
+                return false;
+            }
+            // Position before first Show: avoid flashing a clickable button at an old/default location.
+            if (!Visible) { Bounds = bounds; Show(); }
+            bool moved = NativeMethods.SetWindowPos(Handle, NativeMethods.HwndTopmost,
+                bounds.X, bounds.Y, bounds.Width, bounds.Height,
                 NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
+            int error = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+            if (!moved || !NativeMethods.IsWindowVisible(Handle) || NativeMethods.GetWindowBounds(Handle) != bounds)
+            {
+                Hide();
+                failure = moved ? "Overlay visibility/bounds verification failed." : "SetWindowPos failed; Win32 error " + error + ".";
+                return false;
+            }
             Invalidate();
+            return true;
         }
 
         protected override void OnVisibleChanged(EventArgs e)
@@ -94,6 +104,7 @@ namespace Xtension
             base.OnVisibleChanged(e);
             if (!Visible)
             {
+                Capture = false;
                 _armed = false;
                 _pressed = false;
                 _hover = false;

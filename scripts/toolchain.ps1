@@ -3,11 +3,12 @@ Set-StrictMode -Version Latest
 
 function Get-FrameworkDirectory {
     # The .NET Framework 4.x compiler and reference assemblies. Framework64 csc.exe can target x86 and x64.
-    $directory = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
-    if (-not (Test-Path -LiteralPath (Join-Path $directory 'csc.exe'))) {
-        throw "csc.exe not found under $directory. Install the .NET Framework 4.8 Developer Pack or Build Tools."
+    foreach ($name in @('Framework64', 'Framework')) {
+        $directory = Join-Path $env:WINDIR "Microsoft.NET\$name\v4.0.30319"
+        if (Test-Path -LiteralPath (Join-Path $directory 'csc.exe')) { return $directory }
     }
-    return $directory
+    throw 'The .NET Framework compiler was not found. Install the .NET Framework 4.8 Developer Pack or Build Tools.'
+
 }
 
 function Resolve-FrameworkAssembly([string]$FrameworkDirectory, [string]$FileName) {

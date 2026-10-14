@@ -2,7 +2,7 @@
 
 Xtension is a small Windows tray app for Brave. It shows one custom **×** on the selected horizontal tab, so you do not close a tab by accident. The × moves when you change tabs. It appears only when Xtension can confirm which tab is active.
 
-> **Status: prerelease `v0.1.0-dev1`.** Source checks and unit tests run in CI. Behaviour inside Brave has not been verified on a real installation. See [Verification](#verification).
+> **Status: `v0.1.0-dev2` candidate, not yet published.** The latest published prerelease is dev1. The UIA cache defect has a source-level correction; real-Brave acceptance is still unverified. See [Verification](#verification).
 
 ## Requirements
 
@@ -36,7 +36,7 @@ Native close buttons: if Brave's own "Always hide tab close button" setting is o
 - If the scan is incomplete, ambiguous, slow, or the window moved, the × is hidden and the click does nothing.
 - Ctrl+W is not sent while Shift, Alt, or Win is held, because Ctrl+Shift+W would close the whole window.
 - The × window never takes focus from Brave.
-- Scans run on a background thread. A hung Brave does not freeze the tray; after 5 seconds the × is hidden.
+- Scans run on a background thread. A hung Brave does not freeze the tray; stale confirmation hides the ×; after 5 seconds diagnostics reports a stall.
 - Logs contain no tab or window titles.
 
 ## Known limitations
@@ -48,11 +48,12 @@ Native close buttons: if Brave's own "Always hide tab close button" setting is o
 
 ## Build and test
 
-Requires Windows PowerShell or PowerShell 7 and the .NET Framework 4.8 Developer Pack or Build Tools.
+Requires Windows PowerShell 5.1 or PowerShell 7 and the .NET Framework 4.8 Developer Pack or Build Tools.
 
 ```powershell
 ./scripts/verify-source.ps1      # static checks
 ./scripts/test.ps1               # unit tests for the pure core
+./scripts/test-windows.ps1 -Arch x64 # synthetic Windows UIA/layout checks (not Brave)
 ./scripts/build.ps1 -Arch x64    # dist/Xtension-win-x64.exe
 ./scripts/build.ps1 -Arch x86    # dist/Xtension-win-x86.exe
 ```
@@ -69,7 +70,8 @@ The version comes only from `VERSION`. Edit that file to change it.
 | --- | --- |
 | Static checks (`verify-source.ps1`) | Run in CI on each push and pull request. |
 | Unit tests (pure core) | Run in CI. |
-| x86 and x64 builds | Run in CI. Artifacts are attached to the release. |
+| x86 and x64 builds | Run in CI. Candidate artifacts are not a published release. |
+| Windows UIA fixture / scaled-font layout | Run in CI in both architectures; not real-browser or physical-monitor validation. |
 | Behaviour in Brave (×, click, close, DPI, startup, tray) | **Not verified.** Requires manual testing on Windows with Brave. |
 
 Release notes state which items were verified for each release.
@@ -83,3 +85,7 @@ Release notes state which items were verified for each release.
 ## License
 
 MIT. See `LICENSE`.
+
+### Diagnosing a hidden button
+
+Diagnostics distinguishes current hidden state from the last scan. For a scan error, the details include the failing operation, exception type, HRESULT and application method frames. Provider messages are intentionally omitted because they can contain private browsing data. Do not share tab-list screenshots without redacting titles. A stale/incomplete/ambiguous scan never authorizes Ctrl+W. See [dev2 audit](docs/DEV2_AUDIT.md) for findings and acceptance gaps.

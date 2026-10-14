@@ -49,6 +49,9 @@ jobs:
       - name: Build Xtension (${{ matrix.arch }})
         shell: pwsh
         run: ./scripts/build.ps1 -Arch ${{ matrix.arch }}
+      - name: Windows synthetic UIA and layout regressions
+        shell: powershell
+        run: ./scripts/test-windows.ps1 -Arch ${{ matrix.arch }}
       - name: Upload build output
         uses: actions/upload-artifact@v4
         with:

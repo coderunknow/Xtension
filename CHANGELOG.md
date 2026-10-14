@@ -2,6 +2,25 @@
 
 All notable changes are listed here. Versions follow SemVer. The version in `VERSION` is the single source.
 
+## [0.1.0-dev2] - Unreleased candidate
+
+Windows x86/x64, .NET Framework 4.8, C# 5. Publication is gated on verification.
+
+### Fixed
+
+- Explicit UI Automation navigation caching: activated cache requests alone do not populate TreeWalker results. The previous cached-property read could throw and hide the ×.
+- Incomplete depth/time scans, unknown selection beside a known selected tab, and tabs too short to contain the overlay now reject safely.
+- Late close results expire independently of timer ticks; overlay results recheck foreground, window geometry/DPI and age. Pending close validation cannot re-show the button. Transient identity failures do not remain cached.
+- Native placement/visibility failures are observable. Error diagnostics include operation, type, HRESULT and sanitized application frames without provider messages or browsing data.
+- Dashboard explanations and action rows grow within a scrollable viewport; diagnostics explanations scroll and can be selected/copied. Changed errors, counts and timings refresh correctly.
+- Background wait handles and tray resources are disposed. Failure to obtain single-instance protection refuses startup rather than risking duplicate closures. Build-tool discovery supports 32-bit Windows.
+
+### Regression coverage and verification
+
+- Added pure-core deadline, privacy, ambiguity, geometry and close-guard boundary tests.
+- Added Windows synthetic UIA cache/scanner, overlay, diagnostic refresh and scaled-font/layout tests, in x86 and x64. These are NOT real-Brave acceptance.
+- Candidate CI results pending. No Windows/Brave runtime test was performed locally. Actual user exception, Brave version, mixed-monitor DPI behavior and real click-to-close remain unverified; publication decision follows final checks.
+
 ## [0.1.0-dev1] - 2026-10-14
 
 Prerelease. Windows x86 and x64 only.

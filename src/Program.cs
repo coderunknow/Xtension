@@ -11,6 +11,12 @@ namespace Xtension
         {
             using (SingleInstance instance = SingleInstance.Acquire())
             {
+                if (instance.Unavailable)
+                {
+                    MessageBox.Show("Không xác nhận được phiên Xtension duy nhất. Ứng dụng không khởi chạy để tránh đóng tab hai lần.",
+                        AppInfo.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return 1;
+                }
                 if (instance.IsSecondary)
                 {
                     if (!instance.SignalExisting())
@@ -24,12 +30,12 @@ namespace Xtension
 
                 Application.ThreadException += delegate(object sender, ThreadExceptionEventArgs e)
                 {
-                    AppLog.Error("Unhandled UI exception: " + e.Exception.GetType().Name + ": " + e.Exception.Message);
+                    AppLog.Error("Unhandled UI exception: " + ScanSafety.DescribeError("UI", e.Exception));
                 };
                 AppDomain.CurrentDomain.UnhandledException += delegate(object sender, UnhandledExceptionEventArgs e)
                 {
                     Exception ex = e.ExceptionObject as Exception;
-                    AppLog.Error("Unhandled exception: " + (ex == null ? "unknown" : ex.GetType().Name + ": " + ex.Message));
+                    AppLog.Error("Unhandled exception: " + (ex == null ? "unknown" : ScanSafety.DescribeError("Program", ex)));
                 };
 
                 try
@@ -46,7 +52,7 @@ namespace Xtension
                 }
                 catch (Exception ex)
                 {
-                    AppLog.Error("Fatal startup error: " + ex.GetType().Name + ": " + ex.Message);
+                    AppLog.Error("Fatal startup error: " + ScanSafety.DescribeError("Program", ex));
                     MessageBox.Show(
                         "Xtension không khởi động được. Chi tiết đã được ghi vào nhật ký:\r\n" + AppPaths.LogFile,
                         AppInfo.ProductName, MessageBoxButtons.OK, MessageBoxIcon.Error);

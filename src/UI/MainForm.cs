@@ -12,10 +12,11 @@ namespace Xtension
             "hãy bật tùy chọn đó để giảm nhầm với nút đóng gốc. Nếu tắt nút × hoặc thoát ứng dụng, nút đóng gốc của Brave " +
             "có thể vẫn bị ẩn cho đến khi bạn đổi lại tùy chọn đó trong Brave.";
 
+        private readonly System.Collections.Generic.List<Font> _fonts = new System.Collections.Generic.List<Font>();
         private readonly TrayAppContext _app;
         private readonly Label _badge;
         private readonly Label _headline;
-        private readonly Label _tabName;
+        private readonly TextBox _tabName;
         private readonly Label _notice;
         private readonly Label _footer;
         private readonly Button _toggleButton;
@@ -37,73 +38,56 @@ namespace Xtension
             Text = AppInfo.ProductName;
             StartPosition = FormStartPosition.CenterScreen;
             Size = new Size(720, 560);
-            MinimumSize = new Size(660, 520);
-            MaximizeBox = false;
+            MinimumSize = new Size(360, 280);
+            MaximizeBox = true;
             MinimizeBox = true;
             ShowInTaskbar = true;
             BackColor = Color.FromArgb(243, 246, 250);
-            Font = new Font("Segoe UI", 9F, FontStyle.Regular);
+            Font = OwnFont(9F, FontStyle.Regular);
             AutoScaleMode = AutoScaleMode.Font;
             KeyPreview = true;
 
-            Panel header = new Panel { Dock = DockStyle.Top, Height = 86, BackColor = _navy };
-            Label title = new Label { Text = AppInfo.ProductName, AutoSize = true, Location = new Point(22, 13), Font = new Font("Segoe UI", 17F, FontStyle.Bold), ForeColor = Color.White };
-            Label subtitle = new Label { Text = "Chỉ hiện nút đóng trên tab Brave đang được chọn", AutoSize = true, Location = new Point(24, 48), Font = new Font("Segoe UI", 9.5F), ForeColor = Color.FromArgb(203, 213, 225) };
-            header.Controls.Add(title);
-            header.Controls.Add(subtitle);
+            Panel viewport = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
+            TableLayoutPanel content = UiLayout.Stack();
+            content.Padding = new Padding(18, 16, 18, 14);
+            viewport.Controls.Add(content);
+            Controls.Add(viewport);
 
-            Panel footerPanel = new Panel { Dock = DockStyle.Bottom, Height = 32, BackColor = Color.FromArgb(235, 239, 245), Padding = new Padding(18, 0, 18, 0) };
-            _footer = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = _muted, Text = "Phiên bản " + AppInfo.DisplayVersion + " · Đóng cửa sổ này sẽ thu nhỏ ứng dụng xuống khay hệ thống." };
-            footerPanel.Controls.Add(_footer);
+            TableLayoutPanel header = UiLayout.Stack();
+            header.BackColor = _navy;
+            header.Padding = new Padding(18, 12, 18, 12);
+            UiLayout.Add(header, new WrappingLabel { Text = AppInfo.ProductName, Font = OwnFont(17F, FontStyle.Bold), ForeColor = Color.White });
+            UiLayout.Add(header, new WrappingLabel { Text = "Chỉ hiện nút đóng trên tab Brave đang được chọn", ForeColor = Color.FromArgb(203, 213, 225) });
+            UiLayout.Add(content, header);
 
-            TableLayoutPanel content = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Padding = new Padding(18, 16, 18, 14), BackColor = BackColor };
-            content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 132F));
-            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 64F));
-            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 74F));
-            content.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            TableLayoutPanel statusCard = UiLayout.Stack();
+            statusCard.BackColor = Color.White;
+            statusCard.Padding = new Padding(14);
+            _badge = new WrappingLabel { Font = OwnFont(9F, FontStyle.Bold), ForeColor = _blue, Text = "●  ĐANG KHỞI ĐỘNG" };
+            _headline = new WrappingLabel { Font = OwnFont(13F, FontStyle.Bold), ForeColor = _text, Text = "Đang kiểm tra tab Brave…" };
+            Label activeLabel = new WrappingLabel { Text = "TAB ĐƯỢC NHẬN DIỆN", ForeColor = _muted };
+            // Selectable and horizontally scrollable: a long title is never silently truncated.
+            _tabName = new TextBox { ReadOnly = true, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = Color.White, ForeColor = _text, Text = "Chưa có tab được xác nhận" };
+            UiLayout.Add(statusCard, _badge);
+            UiLayout.Add(statusCard, _headline);
+            UiLayout.Add(statusCard, activeLabel);
+            UiLayout.Add(statusCard, _tabName);
+            UiLayout.Add(content, statusCard);
 
-            Panel statusCard = CreateCard();
-            _badge = new Label { AutoSize = true, Location = new Point(18, 15), Font = new Font("Segoe UI", 9F, FontStyle.Bold), ForeColor = _blue, Text = "●  ĐANG KHỞI ĐỘNG" };
-            _headline = new Label { AutoEllipsis = true, Location = new Point(18, 42), Size = new Size(630, 27), Font = new Font("Segoe UI", 13F, FontStyle.Bold), ForeColor = _text, Text = "Đang kiểm tra tab Brave…" };
-            Label activeLabel = new Label { Text = "TAB ĐƯỢC NHẬN DIỆN", AutoSize = true, Location = new Point(19, 77), Font = new Font("Segoe UI", 7.5F, FontStyle.Bold), ForeColor = _muted };
-            _tabName = new Label { AutoEllipsis = true, Location = new Point(19, 94), Size = new Size(630, 22), Font = new Font("Segoe UI", 9F), ForeColor = _text, Text = "Chưa có tab được xác nhận" };
-            statusCard.Controls.Add(_badge);
-            statusCard.Controls.Add(_headline);
-            statusCard.Controls.Add(activeLabel);
-            statusCard.Controls.Add(_tabName);
-            statusCard.Resize += delegate
-            {
-                int width = Math.Max(120, statusCard.ClientSize.Width - 38);
-                _headline.Width = width;
-                _tabName.Width = width;
-            };
-            content.Controls.Add(statusCard, 0, 0);
-
-            FlowLayoutPanel toggleRow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Padding = new Padding(0, 9, 0, 0), BackColor = BackColor };
+            FlowLayoutPanel toggleRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Padding = new Padding(0, 9, 0, 4) };
             _toggleButton = CreateButton("Tắt nút ×", _red, Color.White, 166, 40);
-            _toggleButton.Margin = new Padding(0, 0, 18, 0);
+            _toggleButton.Margin = new Padding(0, 0, 18, 4);
             _toggleButton.Click += delegate { _app.ToggleOverlayFromDashboard(); };
-            _startupBox = new CheckBox
-            {
-                Text = "Khởi chạy cùng Windows",
-                AutoSize = true,
-                Margin = new Padding(2, 12, 0, 0),
-                ForeColor = _text,
-                Font = new Font("Segoe UI", 9.5F),
-                UseVisualStyleBackColor = false,
-                BackColor = BackColor
-            };
+            _startupBox = new CheckBox { Text = "Khởi chạy cùng Windows", AutoSize = true, Margin = new Padding(2, 12, 0, 4), ForeColor = _text };
             _startupBox.CheckedChanged += delegate
             {
-                if (_suppressStartupEvent) return;
-                _app.SetLaunchAtLogin(_startupBox.Checked);
+                if (!_suppressStartupEvent) _app.SetLaunchAtLogin(_startupBox.Checked);
             };
             toggleRow.Controls.Add(_toggleButton);
             toggleRow.Controls.Add(_startupBox);
-            content.Controls.Add(toggleRow, 0, 1);
+            UiLayout.Add(content, toggleRow);
 
-            FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, Padding = new Padding(0, 10, 0, 4), BackColor = BackColor };
+            FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Padding = new Padding(0, 6, 0, 4) };
             Button diagnosticsButton = CreateButton("Chẩn đoán", Color.FromArgb(226, 232, 240), _text, 126, 38);
             diagnosticsButton.Click += delegate { _app.ShowDiagnostics(); };
             Button settingsButton = CreateButton("Cài đặt Brave", Color.FromArgb(226, 232, 240), _text, 126, 38);
@@ -112,24 +96,18 @@ namespace Xtension
             logButton.Click += delegate { _app.OpenLog(); };
             Button exitButton = CreateButton("Thoát ứng dụng", Color.FromArgb(254, 226, 226), _red, 132, 38);
             exitButton.Click += delegate { _app.RequestExit(); };
-            diagnosticsButton.Margin = new Padding(0, 0, 8, 4);
-            settingsButton.Margin = new Padding(0, 0, 8, 4);
-            logButton.Margin = new Padding(0, 0, 8, 4);
-            exitButton.Margin = new Padding(0, 0, 0, 4);
-            actions.Controls.Add(diagnosticsButton);
-            actions.Controls.Add(settingsButton);
-            actions.Controls.Add(logButton);
-            actions.Controls.Add(exitButton);
-            content.Controls.Add(actions, 0, 2);
+            foreach (Button button in new Button[] { diagnosticsButton, settingsButton, logButton, exitButton })
+            {
+                button.Margin = new Padding(0, 0, 8, 4);
+                actions.Controls.Add(button);
+            }
+            UiLayout.Add(content, actions);
 
-            Panel noticeCard = CreateCard();
-            _notice = new Label { Dock = DockStyle.Fill, Padding = new Padding(14, 10, 12, 8), ForeColor = _muted, Font = new Font("Segoe UI", 8.5F), Text = GeneralNote };
-            noticeCard.Controls.Add(_notice);
-            content.Controls.Add(noticeCard, 0, 3);
-
-            Controls.Add(content);
-            Controls.Add(footerPanel);
-            Controls.Add(header);
+            _notice = new WrappingLabel { Padding = new Padding(14, 10, 12, 8), BackColor = Color.White, ForeColor = _muted, Text = GeneralNote };
+            UiLayout.Add(content, _notice);
+            _footer = new WrappingLabel { Padding = new Padding(0, 10, 0, 0), ForeColor = _muted, Text = "Phiên bản " + AppInfo.DisplayVersion + " · Đóng cửa sổ này sẽ thu nhỏ ứng dụng xuống khay hệ thống." };
+            UiLayout.Add(content, _footer);
+            Shown += delegate { UiLayout.FitToWorkingArea(this); };
 
             FormClosing += OnFormClosing;
             KeyDown += delegate(object sender, KeyEventArgs e)
@@ -157,6 +135,7 @@ namespace Xtension
                 snapshot.Stalled ? "stalled" : "ok",
                 snapshot.IdleReason,
                 snapshot.Notice,
+                snapshot.HiddenReason,
                 scan == null ? "none" : scan.Outcome.ToString(),
                 scan == null ? string.Empty : scan.Message,
                 tabName
@@ -197,8 +176,8 @@ namespace Xtension
             {
                 _badge.Text = "●  SẴN SÀNG";
                 _badge.ForeColor = _blue;
-                _headline.Text = "Đã nhận diện tab — nút × sẽ hiện trong giây lát";
-                detail = scan.Message;
+                _headline.Text = "Nút × đang ẩn";
+                detail = snapshot.HiddenReason;
             }
             else
             {
@@ -212,6 +191,7 @@ namespace Xtension
                 ? (string.IsNullOrEmpty(tabName) ? "(tab không có tiêu đề)" : tabName)
                 : "Chưa có tab được xác nhận";
 
+            if (!snapshot.OverlayVisible && !string.IsNullOrEmpty(snapshot.HiddenReason)) detail = snapshot.HiddenReason;
             string notice = detail + "\r\n" + GeneralNote;
             if (!string.IsNullOrEmpty(snapshot.Notice)) notice = snapshot.Notice + "\r\n" + notice;
             _notice.Text = notice;
@@ -248,28 +228,31 @@ namespace Xtension
             }
         }
 
-        private Panel CreateCard()
+        private Font OwnFont(float size, FontStyle style)
         {
-            Panel panel = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Margin = new Padding(0), Padding = new Padding(0) };
-            panel.Paint += delegate(object sender, PaintEventArgs e)
-            {
-                using (Pen pen = new Pen(Color.FromArgb(221, 228, 237)))
-                {
-                    e.Graphics.DrawRectangle(pen, 0, 0, panel.Width - 1, panel.Height - 1);
-                }
-            };
-            return panel;
+            Font font = new Font("Segoe UI", size, style);
+            _fonts.Add(font);
+            return font;
         }
 
-        private static Button CreateButton(string caption, Color backColor, Color foreColor, int width, int height)
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing) { foreach (Font font in _fonts) font.Dispose(); _fonts.Clear(); }
+        }
+
+        private Button CreateButton(string caption, Color backColor, Color foreColor, int width, int height)
         {
             Button button = new Button
             {
                 Text = caption,
-                Size = new Size(width, height),
+                MinimumSize = new Size(width, height),
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Padding = new Padding(10, 6, 10, 6),
                 BackColor = backColor,
                 ForeColor = foreColor,
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Font = OwnFont(9F, FontStyle.Bold),
                 FlatStyle = FlatStyle.Flat,
                 Cursor = Cursors.Hand,
                 UseVisualStyleBackColor = false,

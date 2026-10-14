@@ -11,6 +11,7 @@ namespace Xtension
     {
         private readonly Mutex _mutex;
         private readonly bool _owned;
+        public bool Unavailable { get; private set; }
 
         private SingleInstance(Mutex mutex, bool owned)
         {
@@ -34,9 +35,9 @@ namespace Xtension
             }
             catch (Exception ex)
             {
-                // Without a mutex the app still runs; duplicate protection is lost, which is logged for diagnosis.
+                // Duplicate instances have independent cooldowns. Never enable input without exclusion.
                 AppLog.Error("Single-instance mutex could not be created: " + ex.GetType().Name + ": " + ex.Message);
-                return new SingleInstance(null, true);
+                return new SingleInstance(null, false) { Unavailable = true };
             }
         }
 
@@ -93,6 +94,12 @@ namespace Xtension
         }
 
         private void Run(Action onRequest)
+        {
+            try { Listen(onRequest); }
+            finally { _request.Dispose(); }
+        }
+
+        private void Listen(Action onRequest)
         {
             while (!_stopped)
             {
