@@ -124,3 +124,14 @@ Additional reported observation, verbatim:
 - Follow-up runs exposed a TEST expectation issue, not a demonstrated app minimize bug. The old multi-window fixture assumed that minimizing Brave necessarily changed the foreground process. Actual native diagnostics now show BOTH windows iconic, the primary minimized Brave HWND still foreground, prior overlay native Visible=false, and no visible small app window. This was observed for both architectures. Production's independent IsIconic check behaves correctly. The revised test retains the hide requirement and checks both iconic states; no safety assertion is skipped.
 - Manual Actions dispatch returned HTTP 403, so the same stronger verification completed via ordinary PR-triggered CI with read-only content permissions. Optional third-party reviews remain unavailable. This adds evidence beyond the original release gate without rewriting history or the released artifact.
 - Remaining acceptance gaps and inherent post-validation race remain as documented. No claim of universal bug freedom, every DPI/Brave version, native x86 OS testing or full tray/startup/graceful-exit acceptance is made.
+
+## Entry 012 — Owner authorizes integration (2026-10-14)
+
+New user instruction, verbatim:
+
+> merge and complete the final things.
+
+- This explicitly supersedes the earlier requirement to keep PR #2 open/unmerged. Earlier entries remain unchanged as historical records.
+- Integrate PR #2 with a normal merge commit after checking the exact updated PR head's repository CI. Do not squash, rebase, use auto-merge, bypass protections, force-push, delete the session branch, or change the published release tag/assets.
+- Verify the resulting main-branch CI and record the observed merge commit and verification links on PR #2. The PR merge record and final verification comment are the canonical integration outcome, avoiding a circular sequence of log-only merges.
+- The dev2 release remains the immutable tested commit `816d7664b79d8927731305c8f974533d65bae714`. Integration does not imply that previously documented desktop acceptance gaps or optional external-review limitations are resolved.

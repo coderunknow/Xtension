@@ -1,5 +1,7 @@
 # dev2 audit — 2026-10-14
 
+> **Integration update (2026-10-14):** The owner subsequently requested “merge and complete the final things.” This supersedes the earlier keep-open instruction. [PR #2](https://github.com/coderunknow/Xtension/pull/2) is the canonical merge record and carries final main-branch verification. Statements below describing an open PR or unchanged main refer to the release-preparation snapshots, not a continuing prohibition on integration. The published tag/assets and documented runtime limitations remain unchanged.
+
 ## Evidence boundary
 
 Baseline: `804a256c273e830a6e2e862e3775fbf5596354b6`, main CI [38570045403](https://github.com/coderunknow/Xtension/actions/runs/38570045403) passed. The Linux authoring host cannot run .NET Framework, WinForms or Brave-on-Windows. Windows CI is used for real compilation, synthetic UIA/layout regressions AND an isolated real-Brave test of the actual built EXEs. Neither is a substitute for all manual desktop scenarios. No actual user exception, HRESULT, stack, Windows/Brave version or accessibility tree was supplied.
