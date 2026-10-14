@@ -3,6 +3,7 @@
 param([ValidateSet('x86', 'x64')][string]$Arch = 'x64')
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+if ($env:GITHUB_ACTIONS -ne 'true') { throw 'This fixture is restricted to disposable GitHub Actions runners, not personal desktops.' }
 $root = Split-Path -Parent $PSScriptRoot
 $directory = Join-Path $root 'dist\brave-fixture'
 New-Item -ItemType Directory -Force -Path $directory | Out-Null
@@ -30,5 +31,7 @@ try {
     if ($code -ne 0) { throw "Real-Brave smoke failed ($code)." }
 } finally {
     # This script is for a disposable CI runner, never a personal Windows desktop.
-    Get-Process brave, Xtension-win-x86, Xtension-win-x64 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Process -ErrorAction SilentlyContinue | Where-Object {
+        try { $_.Path -eq $brave -or $_.Path -eq $app } catch { $false }
+    } | Stop-Process -Force -ErrorAction SilentlyContinue
 }

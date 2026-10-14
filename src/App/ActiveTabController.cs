@@ -92,6 +92,7 @@ namespace Xtension
             if (_closeInFlight && Clock.HasElapsed(_closeStartedMs, AppInfo.CloseValidationTimeoutMs))
             {
                 _notice = "Xác nhận nhấp đã hết hạn. Không tab nào bị đóng.";
+                _closeInFlight = false;
                 InvalidateConfirmation();
             }
             bool isBrave = ProcessIdentity.IsBraveWindow(foreground);
@@ -316,6 +317,8 @@ namespace Xtension
             if (!_closeWorker.TrySubmit(request))
             {
                 AppLog.Warn("Close validation lane was busy; the click was ignored.");
+                _notice = "UI Automation còn đang xử lý lần xác nhận trước. Lần nhấp này đã bị bỏ qua.";
+                NotifyChanged();
                 return;
             }
             _closeRequestId = request.Id;
@@ -401,6 +404,7 @@ namespace Xtension
         private void InvalidateConfirmation()
         {
             _epoch++;
+            if (_closeInFlight) _notice = "Xác nhận đã bị hủy vì trạng thái thay đổi. Không tab nào bị đóng.";
             _closeInFlight = false;
             _closeRequestId = 0;
             _latest = null;
