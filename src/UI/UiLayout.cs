@@ -34,6 +34,21 @@ namespace Xtension
         }
     }
 
+    internal sealed class WrappingCheckBox : CheckBox
+    {
+        public override Size GetPreferredSize(Size proposedSize)
+        {
+            Size natural = base.GetPreferredSize(proposedSize);
+            if (Parent == null) return natural;
+            int width = Math.Max(1, Parent.ClientSize.Width - Parent.Padding.Horizontal - Margin.Horizontal);
+            if (natural.Width <= width) return natural;
+            int glyph = Math.Max(24, Font.Height + 8);
+            Size text = TextRenderer.MeasureText(Text, Font, new Size(Math.Max(1, width - glyph), int.MaxValue),
+                TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl);
+            return new Size(width, Math.Max(natural.Height, text.Height + 8));
+        }
+    }
+
     /// <summary>Wrap and measure text at the available width, including Vietnamese accents and padding.</summary>
     internal sealed class WrappingLabel : Label
     {

@@ -78,7 +78,7 @@ namespace Xtension
             _toggleButton = CreateButton("Tắt nút ×", _red, Color.White, 166, 40);
             _toggleButton.Margin = new Padding(0, 0, 18, 4);
             _toggleButton.Click += delegate { _app.ToggleOverlayFromDashboard(); };
-            _startupBox = new CheckBox { Text = "Khởi chạy cùng Windows", AutoSize = true, Margin = new Padding(2, 12, 0, 4), ForeColor = _text };
+            _startupBox = new WrappingCheckBox { Text = "Khởi chạy cùng Windows", AutoSize = true, Margin = new Padding(2, 12, 0, 4), ForeColor = _text };
             _startupBox.CheckedChanged += delegate
             {
                 if (!_suppressStartupEvent) _app.SetLaunchAtLogin(_startupBox.Checked);

@@ -24,6 +24,10 @@ namespace Xtension.Tests
                 tabs.TabPages.Add("Synthetic second");
                 tabs.SelectedIndex = 1;
                 fixture.Controls.Add(tabs);
+                fixture.Shown += delegate
+                {
+                    using (EventWaitHandle ready = EventWaitHandle.OpenExisting(args[1])) ready.Set();
+                };
                 Application.Run(fixture);
                 return 0;
             }
@@ -33,11 +37,13 @@ namespace Xtension.Tests
         [Test]
         public static void ExplicitCacheNavigationAndScannerOnRealWindowsUia()
         {
-            using (Process fixture = Process.Start(new ProcessStartInfo(Application.ExecutablePath, "--fixture") { UseShellExecute = false }))
+            string eventName = @"Local\Xtension.TestReady." + Guid.NewGuid().ToString("N");
+            using (EventWaitHandle ready = new EventWaitHandle(false, EventResetMode.ManualReset, eventName))
+            using (Process fixture = Process.Start(new ProcessStartInfo(Application.ExecutablePath, "--fixture " + eventName) { UseShellExecute = false, CreateNoWindow = true }))
             {
                 try
                 {
-                    Assert.IsTrue(fixture.WaitForInputIdle(10000), "fixture message loop started");
+                    Assert.IsTrue(ready.WaitOne(10000), "fixture Shown handshake");
                     fixture.Refresh();
                     IntPtr hwnd = fixture.MainWindowHandle;
                     Assert.IsTrue(hwnd != IntPtr.Zero, "fixture HWND");
@@ -75,7 +81,7 @@ namespace Xtension.Tests
                     worker.SetApartmentState(ApartmentState.MTA);
                     worker.Start();
                     Assert.IsTrue(worker.Join(15000), "bounded UIA test deadline");
-                    if (failure != null) throw new AssertionFailure(failure.ToString());
+                    if (failure != null) throw new AssertionFailure(failure.ToString().Replace(Environment.NewLine, " | "));
                 }
                 finally
                 {
@@ -116,7 +122,7 @@ namespace Xtension.Tests
                                     Assert.IsTrue(label.Height >= needed, "wrapped label height at " + scale + ": " + label.Height + " < " + needed);
                                 }
                                 if (control is Button || control is CheckBox)
-                                    Assert.IsTrue(control.Parent.ClientRectangle.Contains(control.Bounds), "action not clipped by flow row at " + scale);
+                                    Assert.IsTrue(control.Parent.ClientRectangle.Contains(control.Bounds), "action not clipped by flow row at " + scale + ": " + control.GetType().Name + " " + control.Bounds + " in " + control.Parent.ClientRectangle);
                             }
                         }
                     }

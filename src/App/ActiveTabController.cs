@@ -50,6 +50,7 @@ namespace Xtension
         private string _notice = string.Empty;
         private ScanResult _latest;
         private ScanOutcome _loggedOutcome = ScanOutcome.Idle;
+        private string _loggedError;
         private long _lastOverlayRequestMs = Clock.Never;
         private long _lastDashboardRequestMs = Clock.Never;
         private long _lastConfirmedMs = Clock.Never;
@@ -364,7 +365,8 @@ namespace Xtension
 
             string failure;
             // Re-read immediately before injection; never rely only on the last timer tick.
-            if (NativeMethods.GetForegroundRootWindow() != request.Window || KeyboardInjector.BlockingModifierDown())
+            if (NativeMethods.GetForegroundRootWindow() != request.Window || KeyboardInjector.BlockingModifierDown()
+                || !ScanSafety.IsFresh(request.StartedMs, Clock.NowMs, AppInfo.CloseValidationTimeoutMs))
             {
                 InvalidateConfirmation();
                 _notice = "Cửa sổ hoặc phím bổ trợ đã thay đổi. Không tab nào bị đóng.";
@@ -430,7 +432,8 @@ namespace Xtension
 
         private void LogOutcomeIfChanged(ScanResult result)
         {
-            if (result.Outcome == _loggedOutcome) return;
+            if (result.Outcome == _loggedOutcome && result.Error == _loggedError) return;
+            _loggedError = result.Error;
             _loggedOutcome = result.Outcome;
             string detail = result.Error == null ? string.Empty : " error=" + result.Error;
             AppLog.Info("Overlay state: " + result.Outcome + " (tabs=" + result.Tabs.Count + ", nodes=" + result.NodesVisited + ", ms=" + result.ElapsedMs + ")" + detail + ".");
