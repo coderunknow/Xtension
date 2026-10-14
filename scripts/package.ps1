@@ -34,7 +34,8 @@ foreach ($arch in @('x86', 'x64')) {
 $sourceZip = Join-Path $releaseDir "Xtension-$tag-source.zip"
 $dirty = @(git -C $root status --porcelain 2>$null)
 if ($dirty.Count -gt 0 -and -not $AllowDirtySource) { throw 'Working tree is not clean; the source ZIP would not match HEAD. Commit first or pass -AllowDirtySource for a local test.' }
-git -C $root archive --format=zip --output="$sourceZip" HEAD
+$gitArgs = @('-C', $root, 'archive', '--format=zip', "--output=$sourceZip", 'HEAD')
+& git @gitArgs
 if ($LASTEXITCODE -ne 0) { throw 'git archive failed.' }
 
 # Release notes: the CHANGELOG section for this version, then the fixed capability and limitation statement.

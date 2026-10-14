@@ -40,11 +40,11 @@ foreach ($file in $sourceFiles) {
     $relative = $file.FullName.Substring($root.Length + 1)
     $text = Get-Content -LiteralPath $file.FullName -Raw
     $sourceTexts[$relative] = $text
-    if ($text -match '\b0\.1\.0\b') { Add-Failure "$relative contains a hard-coded version literal; use ProductVersion." }
-    if ($text -match 'BraveActiveCloseButton|Brave Active Tab|MainForm\.AppVersion') { Add-Failure "$relative contains a legacy name." }
-    if ($text -match 'Process\.GetProcessById') { Add-Failure "$relative calls Process.GetProcessById; use ProcessIdentity." }
-    if ($text -match 'TryCloseActiveTab') { Add-Failure "$relative references the removed unsafe close path." }
-    if ($text -match 'Thread\.Sleep') { Add-Failure "$relative uses Thread.Sleep; use an event or timer." }
+    if ($text -cmatch '\b0\.1\.0\b') { Add-Failure "$relative contains a hard-coded version literal; use ProductVersion." }
+    if ($text -cmatch 'BraveActiveCloseButton|Brave Active Tab|MainForm\.AppVersion') { Add-Failure "$relative contains a legacy name." }
+    if ($text -cmatch 'Process\.GetProcessById') { Add-Failure "$relative calls Process.GetProcessById; use ProcessIdentity." }
+    if ($text -cmatch 'TryCloseActiveTab') { Add-Failure "$relative references the removed unsafe close path." }
+    if ($text -cmatch 'Thread\.Sleep') { Add-Failure "$relative uses Thread.Sleep; use an event or timer." }
 }
 
 # C# 5 rules: the .NET Framework 4.8 csc used by build.ps1 is C# 5 at most.
@@ -53,16 +53,16 @@ $csharp5Bans = @(
     @{ Pattern = '\$"'; Name = 'interpolated string' },
     @{ Pattern = '\bnameof\s*\('; Name = 'nameof' },
     @{ Pattern = '\bout\s+var\b'; Name = 'out var' },
-    @{ Pattern = '\bwhen\s*\('; Name = 'pattern when filter' },
+    @{ Pattern = '\bwhen\s*\('; Name = 'pattern when filter' }
 )
 foreach ($entry in $sourceTexts.GetEnumerator()) {
     # Strip comments and string literals before checking, so documentation does not trip the rules.
     $code = [regex]::Replace($entry.Value, '//[^\r\n]*', '')
     $code = [regex]::Replace($code, '"(?:\\.|[^"\\])*"', '""')
     foreach ($ban in $csharp5Bans) {
-        if ($code -match $ban.Pattern) { Add-Failure "$($entry.Key) uses $($ban.Name), which is not allowed in C# 5." }
+        if ($code -cmatch $ban.Pattern) { Add-Failure "$($entry.Key) uses $($ban.Name), which is not allowed in C# 5." }
     }
-    if ($code -match '(?m)^\s*(public|private|internal|protected)\b[^=;{]*\)\s*=>') {
+    if ($code -cmatch '(?m)^\s*(public|private|internal|protected)\b[^=;{]*\)\s*=>') {
         Add-Failure "$($entry.Key) appears to use an expression-bodied member, which is not allowed in C# 5."
     }
 }
@@ -80,7 +80,7 @@ if (-not $langVersion -or $langVersion.InnerText -ne '5') { Add-Failure 'Xtensio
 $framework = $project.SelectSingleNode("//*[local-name()='TargetFrameworkVersion']")
 if (-not $framework -or $framework.InnerText -ne 'v4.8') { Add-Failure 'Xtension.csproj must target v4.8.' }
 $buildScript = Get-Content -LiteralPath (Join-Path $root 'scripts\build.ps1') -Raw
-if ($buildScript -notmatch "'/langversion:5'") { Add-Failure 'scripts/build.ps1 does not pass /langversion:5.' }
+if ($buildScript -cnotmatch "'/langversion:5'") { Add-Failure 'scripts/build.ps1 does not pass /langversion:5.' }
 
 # Manifest: a template with a version token, and a sane identity.
 $manifestTemplate = Get-Content -LiteralPath (Join-Path $root 'app.manifest.template') -Raw
@@ -91,15 +91,16 @@ if ($manifestTemplate -match 'uiAccess="true"') { Add-Failure 'Manifest must not
 
 # Product rules that must not regress.
 $nativeText = if ($sourceTexts.ContainsKey('src\Interop\NativeMethods.cs')) { $sourceTexts['src\Interop\NativeMethods.cs'] } else { '' }
-if ($nativeText -match 'Mouse|MOUSEEVENTF') { Add-Failure 'Mouse injection found in NativeMethods; the close path must use keyboard only.' }
+if ($nativeText -cmatch 'Mouse|MOUSEEVENTF') { Add-Failure 'Mouse injection found in NativeMethods; the close path must use keyboard only.' }
 $overlayText = if ($sourceTexts.ContainsKey('src\UI\CloseButtonOverlay.cs')) { $sourceTexts['src\UI\CloseButtonOverlay.cs'] } else { '' }
-if ($overlayText -notmatch 'WsExNoActivate' -or $overlayText -notmatch 'WmMouseActivate') { Add-Failure 'Overlay must be non-activating (WS_EX_NOACTIVATE and WM_MOUSEACTIVATE).' }
+if ($overlayText -cnotmatch 'WsExNoActivate' -or $overlayText -cnotmatch 'WmMouseActivate') { Add-Failure 'Overlay must be non-activating (WS_EX_NOACTIVATE and WM_MOUSEACTIVATE).' }
 $logText = if ($sourceTexts.ContainsKey('src\Core\AppLog.cs')) { $sourceTexts['src\Core\AppLog.cs'] } else { '' }
-if ($logText -match 'Title') { Add-Failure 'AppLog references window or tab titles; private titles must stay out of logs.' }
+$logCode = [regex]::Replace($logText, '//[^\r\n]*', '')
+if ($logCode -cmatch 'Title') { Add-Failure 'AppLog code references window or tab titles; private titles must stay out of logs.' }
 $injectorText = if ($sourceTexts.ContainsKey('src\Interop\KeyboardInjector.cs')) { $sourceTexts['src\Interop\KeyboardInjector.cs'] } else { '' }
-if ($injectorText -notmatch 'VK_SHIFT|VK_MENU|VK_LWIN') { Add-Failure 'KeyboardInjector must block on Shift, Alt and Win.' }
+if ($injectorText -cnotmatch 'VkShift' -or $injectorText -cnotmatch 'VkMenu' -or $injectorText -cnotmatch 'VkLeftWin' -or $injectorText -cnotmatch 'VkRightWin') { Add-Failure 'KeyboardInjector must block on Shift, Alt and Win.' }
 $startupText = if ($sourceTexts.ContainsKey('src\App\StartupRegistration.cs')) { $sourceTexts['src\App\StartupRegistration.cs'] } else { '' }
-if ($startupText -notmatch 'CurrentUser') { Add-Failure 'Startup registration must use the per-user Run key only.' }
+if ($startupText -cnotmatch 'CurrentUser') { Add-Failure 'Startup registration must use the per-user Run key only.' }
 
 # Workflows: tag-triggered release, prerelease handling, checksums, and no secrets in logs.
 $release = Get-Content -LiteralPath (Join-Path $root '.github\workflows\release.yml') -Raw
@@ -126,10 +127,10 @@ $trackedFiles = @(git -C $root ls-files --cached --others --exclude-standard 2>$
 foreach ($relative in $trackedFiles) {
     $path = Join-Path $root $relative
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
-    if ((Get-Item -LiteralPath $path).Length -gt 1MB) { continue }
+    if ((Get-Item -LiteralPath $path).Length -gt 1048576) { continue }
     $text = Get-Content -LiteralPath $path -Raw -ErrorAction SilentlyContinue
     foreach ($pattern in $secretPatterns) {
-        if ($text -match $pattern) { Add-Failure "Possible secret in $relative (pattern $pattern)." }
+        if ($text -cmatch $pattern) { Add-Failure "Possible secret in $relative (pattern $pattern)." }
     }
 }
 
