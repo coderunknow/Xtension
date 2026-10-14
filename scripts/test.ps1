@@ -32,6 +32,10 @@ $arguments = @(
 
 Invoke-Csc $csc $arguments
 
-& $output
+$results = @(& $output 2>&1 | ForEach-Object { "$_" })
+$results | ForEach-Object { Write-Host $_ }
+foreach ($line in $results) {
+    if ($line -like 'FAIL *') { Write-Host ("::error title=unit test::" + $line) }
+}
 if ($LASTEXITCODE -ne 0) { throw "Unit tests failed (exit code $LASTEXITCODE)." }
 Write-Host 'UNIT TESTS PASSED'

@@ -29,6 +29,11 @@ function Get-SourceFiles([string]$Root) {
 }
 
 function Invoke-Csc([string]$Csc, [string[]]$Arguments) {
-    & $Csc @Arguments
+    # Captures compiler output so every error line is printed and also raised as a GitHub annotation.
+    $output = @(& $Csc @Arguments 2>&1 | ForEach-Object { "$_" })
+    $output | ForEach-Object { Write-Host $_ }
+    foreach ($line in $output) {
+        if ($line -match ': error CS') { Write-Host ("::error title=csc::" + $line) }
+    }
     if ($LASTEXITCODE -ne 0) { throw "csc.exe failed with exit code $LASTEXITCODE." }
 }

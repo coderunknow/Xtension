@@ -137,7 +137,10 @@ foreach ($relative in $trackedFiles) {
 }
 
 if ($failures.Count -gt 0) {
-    foreach ($failure in $failures) { Write-Host "FAIL: $failure" -ForegroundColor Red }
+    foreach ($failure in $failures) {
+        Write-Host "FAIL: $failure" -ForegroundColor Red
+        Write-Host ("::error title=source check::" + $failure)
+    }
     throw "Source verification failed with $($failures.Count) problem(s)."
 }
 

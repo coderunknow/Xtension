@@ -24,3 +24,8 @@ Rules: append new dated entries at the bottom. Do not rewrite or delete earlier 
 - Run 38566665861 failed in the same step. Cause (by code review): the verify script looked for `SHA256SUMS` in `release.yml`, but the name is only in `scripts/package.ps1`. The Python mirror had checked the right file, so it did not reproduce the mismatch.
 - Fix: the check now reads `scripts/package.ps1`. `release.yml` also shows the checksum file in a step, so the release log includes it.
 - Still unverified until a CI run completes: PowerShell execution, csc builds, and unit tests.
+
+## 2026-10-14 — CI run 3: unit-test step failed; diagnostics added
+
+- Run 38566872550: static checks now pass; "Run unit tests (pure core)" failed. The job log is not downloadable from the sandbox (the log host is outside the allowed hosts), but check-run annotations are available through api.github.com.
+- Scripts now emit `::error` annotations for failed source checks, csc errors, and failing tests, so the failure text can be read through the API.
