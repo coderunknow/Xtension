@@ -102,6 +102,12 @@ namespace Xtension.Tests
                     SetForegroundWindow(brave);
                     WaitForOverlay(app.Id, brave, 7000);
                     Console.WriteLine("PASS overlay follows two Brave windows");
+                    // Later minimize acceptance expects NO eligible browser foreground. Leaving this second
+                    // window open/normal lets Windows legitimately foreground it and show its own overlay.
+                    ShowWindow(second, 6);
+                    Wait(delegate { return NativeMethods.IsIconic(second); }, 5000, "secondary window did not minimize");
+                    SetForegroundWindow(brave);
+                    WaitForOverlay(app.Id, brave, 7000);
 
                     string readyName = @"Local\Xtension.FocusFixture." + Guid.NewGuid().ToString("N");
                     using (EventWaitHandle ready = new EventWaitHandle(false, EventResetMode.ManualReset, readyName))
@@ -152,7 +158,8 @@ namespace Xtension.Tests
                     Console.WriteLine("PASS actual mouse close removed only selected runtime identity, no consecutive close");
 
                     ShowWindow(brave, 6);
-                    Wait(delegate { return FindVisibleWindow(app.Id, true) == IntPtr.Zero; }, 5000, "overlay survived minimize");
+                    Wait(delegate { return NativeMethods.IsIconic(brave) && !ProcessIdentity.IsBraveWindow(NativeMethods.GetForegroundRootWindow(), true)
+                        && FindVisibleWindow(app.Id, true) == IntPtr.Zero; }, 5000, "overlay survived minimize with both browser windows minimized");
                     ShowWindow(brave, 9);
                     SetForegroundWindow(brave);
                     Wait(delegate { return FindVisibleWindow(app.Id, true) != IntPtr.Zero; }, 7000, "overlay did not recover on restore");
