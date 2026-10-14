@@ -76,6 +76,9 @@ jobs:
       - name: Package release assets
         shell: pwsh
         run: ./scripts/package.ps1
+      - name: Show checksums
+        shell: pwsh
+        run: Get-Content -LiteralPath dist/release/SHA256SUMS.txt
       - name: Publish GitHub prerelease (not latest)
         shell: pwsh
         run: |

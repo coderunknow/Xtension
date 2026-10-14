@@ -106,7 +106,9 @@ if ($startupText -cnotmatch 'CurrentUser') { Add-Failure 'Startup registration m
 $release = Get-Content -LiteralPath (Join-Path $root '.github\workflows\release.yml') -Raw
 if ($release -notmatch "tags:\s*\r?\n\s*-\s*'v\*'") { Add-Failure 'release.yml must trigger on v* tags.' }
 if ($release -notmatch 'prerelease') { Add-Failure 'release.yml must publish a prerelease.' }
-if ($release -notmatch 'SHA256SUMS') { Add-Failure 'release.yml must publish SHA256SUMS.txt.' }
+$packageScript = Get-Content -LiteralPath (Join-Path $root 'scripts\package.ps1') -Raw
+if ($packageScript -notmatch 'SHA256SUMS') { Add-Failure 'scripts/package.ps1 must write SHA256SUMS.txt.' }
+if ($release -notmatch 'SHA256SUMS') { Add-Failure 'release.yml must show or publish SHA256SUMS.txt.' }
 if ($release -match 'make_latest:\s*true|--latest(?!=false)') { Add-Failure 'release.yml must never mark the release as latest.' }
 $ci = Get-Content -LiteralPath (Join-Path $root '.github\workflows\ci.yml') -Raw
 if ($ci -notmatch 'verify-source\.ps1') { Add-Failure 'ci.yml does not run verify-source.ps1.' }
