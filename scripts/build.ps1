@@ -51,6 +51,18 @@ try {
     Invoke-Csc $csc $arguments
 
     if (-not (Test-Path -LiteralPath $output)) { throw 'Compiler reported success but the output is missing.' }
+    $commit = (& git -C $root rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Could not identify build source commit.' }
+    $dirty = @(& git -C $root status --porcelain)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not inspect build source tree.' }
+    $stamp = [ordered]@{
+        version = $version
+        architecture = $Arch
+        commit = $commit
+        dirty = ($dirty.Count -gt 0)
+        sha256 = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+    $stamp | ConvertTo-Json | Set-Content -LiteralPath ($output + '.build.json') -Encoding ASCII
     $size = (Get-Item -LiteralPath $output).Length
     Write-Host "BUILD SUCCEEDED: $output ($size bytes)"
 }

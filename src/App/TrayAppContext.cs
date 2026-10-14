@@ -261,7 +261,22 @@ namespace Xtension
                     _mainForm.Close();
                 }
             });
-            StopSafely(() => { _tray.Visible = false; _tray.Dispose(); });
+            StopSafely(() =>
+            {
+                _tray.Visible = false;
+                Icon icon = _tray.Icon;
+                ContextMenuStrip menu = _tray.ContextMenuStrip;
+                _tray.Dispose();
+                if (icon != null) icon.Dispose();
+                if (menu != null)
+                {
+                    foreach (ToolStripItem item in menu.Items)
+                        if (item.Font != menu.Font) item.Font.Dispose();
+                    Font font = menu.Font;
+                    menu.Dispose();
+                    font.Dispose();
+                }
+            });
             StopSafely(() => _invoker.Dispose());
             AppLog.Info("Xtension stopped.");
             base.ExitThreadCore();

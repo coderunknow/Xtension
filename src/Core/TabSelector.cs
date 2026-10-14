@@ -24,7 +24,7 @@ namespace Xtension
             {
                 // A truncated walk may have skipped a second selected tab, so no selection is trustworthy.
                 result.Outcome = ScanOutcome.ScanIncomplete;
-                result.Message = "Quét UI Automation chưa đầy đủ (đạt giới hạn phần tử hoặc thời gian). Đã ẩn nút × để tránh đóng nhầm.";
+                result.Message = "Quét UI Automation chưa đầy đủ (đạt giới hạn duyệt/thời gian hoặc phần tử đã biến mất). Đã ẩn nút × để tránh đóng nhầm.";
                 return;
             }
 
@@ -55,8 +55,18 @@ namespace Xtension
                 return;
             }
 
+            foreach (TabInfo tab in result.Tabs)
+            {
+                if (!tab.SelectionKnown)
+                {
+                    result.Outcome = ScanOutcome.NoSelectedTab;
+                    result.Message = "Có tab chưa đọc được trạng thái chọn. Không thể xác nhận duy nhất một tab; đã ẩn nút ×.";
+                    return;
+                }
+            }
+
             TabInfo only = selected[0];
-            if (!only.IsHorizontalCandidate)
+            if (!only.IsHorizontalCandidate || TabGeometry.GetOverlayBounds(only.Bounds, result.Dpi).IsEmpty)
             {
                 result.Outcome = ScanOutcome.NoSelectedTab;
                 result.Message = "Tab đang chọn không nằm trong thanh tab ngang hợp lệ (có thể bị cuộn ra ngoài hoặc là tab ghim/dọc). Đã ẩn nút ×.";

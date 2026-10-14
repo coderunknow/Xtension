@@ -8,7 +8,7 @@ namespace Xtension
     /// <summary>
     /// Bounded, read-only UI Automation walk of one Brave top-level window. Must run on a worker thread, never on the UI thread.
     /// It reads TabItem elements and never descends into a tab, page content (Document) or text input (Edit).
-    /// Properties are fetched with one CacheRequest, so each element costs one cross-process round trip, not one per property.
+    /// Properties are prefetched using an explicit CacheRequest on every navigation operation.
     /// </summary>
     internal static class UiaTabScanner
     {
@@ -20,6 +20,8 @@ namespace Xtension
             public readonly ScanResult Result;
             public int Nodes;
             public bool Incomplete;
+            public string Operation = "BuildCacheRequest";
+            public CacheRequest Cache;
 
             public WalkState(ScanResult result)
             {
@@ -32,10 +34,11 @@ namespace Xtension
             ScanResult result = new ScanResult();
             result.Window = window;
             result.Dpi = NativeMethods.GetWindowDpi(window);
-            result.WindowTitle = NativeMethods.GetWindowTitle(window);
+
 
             Stopwatch total = Stopwatch.StartNew();
             Rectangle bounds = NativeMethods.GetWindowBounds(window);
+            result.WindowBounds = bounds;
             if (bounds.IsEmpty)
             {
                 result.Outcome = ScanOutcome.WindowUnavailable;
@@ -47,9 +50,11 @@ namespace Xtension
             WalkState state = new WalkState(result);
             try
             {
-                CacheRequest cache = BuildCacheRequest();
-                using (cache.Activate())
+                state.Cache = BuildCacheRequest();
+                state.Operation = "CacheRequest.Activate";
+                using (state.Cache.Activate())
                 {
+                    state.Operation = "AutomationElement.FromHandle";
                     AutomationElement root = AutomationElement.FromHandle(window);
                     if (root == null)
                     {
@@ -61,15 +66,23 @@ namespace Xtension
                     Visit(root, 0, state);
                 }
             }
+            catch (ElementNotAvailableException ex)
+            {
+                state.Incomplete = true;
+                result.Error = ScanSafety.DescribeError(state.Operation, ex);
+            }
             catch (Exception ex)
             {
                 result.Outcome = ScanOutcome.Error;
-                result.Error = ex.GetType().Name + ": " + ex.Message;
+                result.Error = ScanSafety.DescribeError(state.Operation, ex);
+                result.NodesVisited = state.Nodes;
                 result.Message = "Quét UI Automation thất bại. Đã ẩn nút ×.";
                 result.ElapsedMs = total.ElapsedMilliseconds;
                 return result;
             }
 
+            // A final provider call can exceed the budget even if no further node is visited.
+            if (total.ElapsedMilliseconds >= AppInfo.ScanTimeBudgetMs) state.Incomplete = true;
             TabSelector.Apply(result, bounds, state.Incomplete, state.Nodes, total.ElapsedMilliseconds);
             return result;
         }
@@ -77,6 +90,7 @@ namespace Xtension
         private static CacheRequest BuildCacheRequest()
         {
             CacheRequest cache = new CacheRequest();
+            cache.TreeScope = TreeScope.Element;
             cache.Add(AutomationElement.ControlTypeProperty);
             cache.Add(AutomationElement.NameProperty);
             cache.Add(AutomationElement.BoundingRectangleProperty);
@@ -96,36 +110,22 @@ namespace Xtension
             }
             state.Nodes++;
 
-            ControlType type;
-            try
-            {
-                type = element.Cached.ControlType;
-            }
-            catch (ElementNotAvailableException)
-            {
-                state.Incomplete = true;
-                return;
-            }
-
+            state.Operation = "Cached.ControlType";
+            ControlType type = element.Cached.ControlType;
             if (type == ControlType.TabItem)
             {
-                state.Result.Tabs.Add(ReadTab(element, depth));
+                state.Result.Tabs.Add(ReadTab(element, depth, state));
                 return;
             }
+            if (IsLeafContent(type)) return;
 
-            if (IsLeafContent(type) || depth >= AppInfo.ScanMaxDepth) return;
-
-            AutomationElement child;
-            try
-            {
-                child = Walker.GetFirstChild(element);
-            }
-            catch (ElementNotAvailableException)
+            state.Operation = "TreeWalker.GetFirstChild(cache)";
+            AutomationElement child = Walker.GetFirstChild(element, state.Cache);
+            if (child != null && depth >= AppInfo.ScanMaxDepth)
             {
                 state.Incomplete = true;
                 return;
             }
-
             int siblings = 0;
             while (child != null)
             {
@@ -134,20 +134,11 @@ namespace Xtension
                     state.Incomplete = true;
                     return;
                 }
-
                 Visit(child, depth + 1, state);
                 if (state.Incomplete) return;
                 siblings++;
-
-                try
-                {
-                    child = Walker.GetNextSibling(child);
-                }
-                catch (ElementNotAvailableException)
-                {
-                    state.Incomplete = true;
-                    return;
-                }
+                state.Operation = "TreeWalker.GetNextSibling(cache)";
+                child = Walker.GetNextSibling(child, state.Cache);
             }
         }
 
@@ -162,17 +153,22 @@ namespace Xtension
                 || type == ControlType.ScrollBar;
         }
 
-        private static TabInfo ReadTab(AutomationElement element, int depth)
+        private static TabInfo ReadTab(AutomationElement element, int depth, WalkState state)
         {
             TabInfo tab = new TabInfo();
+            state.Operation = "Cached.Name";
             tab.Name = element.Cached.Name ?? string.Empty;
+            state.Operation = "Cached.BoundingRectangle";
             tab.Bounds = ToRectangle(element.Cached.BoundingRectangle);
+            state.Operation = "Cached.IsOffscreen";
             tab.IsOffscreen = element.Cached.IsOffscreen;
             tab.Depth = depth;
 
+            state.Operation = "TryGetCachedPattern(SelectionItem)";
             object pattern;
             if (element.TryGetCachedPattern(SelectionItemPattern.Pattern, out pattern))
             {
+                state.Operation = "SelectionItem.Cached.IsSelected";
                 tab.SelectionKnown = true;
                 tab.Selected = ((SelectionItemPattern)pattern).Cached.IsSelected;
             }
@@ -183,6 +179,9 @@ namespace Xtension
         {
             if (double.IsNaN(rect.Left) || double.IsNaN(rect.Top) || double.IsNaN(rect.Right) || double.IsNaN(rect.Bottom)) return Rectangle.Empty;
             if (double.IsInfinity(rect.Left) || double.IsInfinity(rect.Top) || double.IsInfinity(rect.Right) || double.IsInfinity(rect.Bottom)) return Rectangle.Empty;
+
+            if (rect.Left < int.MinValue || rect.Top < int.MinValue || rect.Right > int.MaxValue || rect.Bottom > int.MaxValue
+                || rect.Width > int.MaxValue || rect.Height > int.MaxValue) return Rectangle.Empty;
 
             int left = (int)Math.Round(rect.Left);
             int top = (int)Math.Round(rect.Top);

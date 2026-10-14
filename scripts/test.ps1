@@ -37,6 +37,7 @@ try {
     $exitCode = $LASTEXITCODE
     $results | ForEach-Object { Write-Host $_ }
     foreach ($line in $results) {
+        if ($line -match '^\d+ passed, \d+ failed\.$') { Write-Host ("::notice title=Core test evidence::" + $line) }
         if ($line -like 'FAIL *') { Write-Host ("::error title=unit test::" + $line) }
     }
     if ($exitCode -ne 0) { throw "Unit tests failed (exit code $exitCode)." }

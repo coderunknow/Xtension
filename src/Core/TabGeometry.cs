@@ -63,6 +63,7 @@ namespace Xtension
 
             int size = Px(BaseOverlaySize, dpi);
             int inset = Px(BaseOverlayInset, dpi);
+            if (size <= 0 || tab.Height < size || tab.Width < size + inset) return Rectangle.Empty;
             int x = tab.Right - size - inset;
             int y = tab.Top + (tab.Height - size) / 2;
             return new Rectangle(x, y, size, size);

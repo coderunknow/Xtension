@@ -41,12 +41,13 @@ namespace Xtension
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool IsWindow(IntPtr hwnd);
 
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool IsWindowVisible(IntPtr hwnd);
+
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
-
-        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        internal static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int maxCount);
 
         [DllImport("user32.dll", SetLastError = true)]
         internal static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
@@ -115,20 +116,6 @@ namespace Xtension
             RECT rect;
             if (!GetWindowRect(hwnd, out rect)) return Rectangle.Empty;
             return Rectangle.FromLTRB(rect.Left, rect.Top, rect.Right, rect.Bottom);
-        }
-
-        public static string GetWindowTitle(IntPtr hwnd)
-        {
-            StringBuilder text = new StringBuilder(512);
-            try
-            {
-                GetWindowText(hwnd, text, text.Capacity);
-            }
-            catch (Exception ex)
-            {
-                AppLog.WarnThrottled("window-title", "Window title could not be read: " + ex.GetType().Name);
-            }
-            return text.ToString();
         }
 
         /// <summary>DPI of the window's monitor, or 96 when the window or API is unavailable.</summary>

@@ -30,6 +30,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.arch }}
+    timeout-minutes: 10
     needs: verify-tag
     runs-on: windows-latest
     permissions:
@@ -49,11 +50,16 @@ jobs:
       - name: Build Xtension (${{ matrix.arch }})
         shell: pwsh
         run: ./scripts/build.ps1 -Arch ${{ matrix.arch }}
+      - name: Windows synthetic UIA and layout regressions
+        shell: powershell
+        run: ./scripts/test-windows.ps1 -Arch ${{ matrix.arch }}
       - name: Upload build output
         uses: actions/upload-artifact@v4
         with:
           name: Xtension-win-${{ matrix.arch }}
-          path: dist/Xtension-win-${{ matrix.arch }}.exe
+          path: |
+            dist/Xtension-win-${{ matrix.arch }}.exe
+            dist/Xtension-win-${{ matrix.arch }}.exe.build.json
           if-no-files-found: error
           retention-days: 2
 
@@ -88,3 +94,26 @@ jobs:
           $assets = Get-ChildItem -LiteralPath dist/release -File | Where-Object { $_.Name -ne 'RELEASE_NOTES.md' } | ForEach-Object { $_.FullName }
           & gh release create $tag @assets --verify-tag --prerelease --latest=false --title "Xtension $tag" --notes-file dist/release/RELEASE_NOTES.md
           if ($LASTEXITCODE -ne 0) { throw 'gh release create failed.' }
+      - name: Verify published assets by downloading them again
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $destination = 'dist/published-verification'
+          New-Item -ItemType Directory -Force -Path $destination | Out-Null
+          & gh release download $tag --dir $destination
+          if ($LASTEXITCODE -ne 0) { throw 'Published asset download failed.' }
+          $metadata = & gh release view $tag --json isPrerelease,isDraft,tagName,assets | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Published release metadata query failed.' }
+          if (-not $metadata.isPrerelease -or $metadata.isDraft -or $metadata.tagName -ne $tag -or $metadata.assets.Count -ne 4) {
+            throw 'Published release metadata or asset count is incorrect.'
+          }
+          $manifest = Join-Path $destination 'SHA256SUMS.txt'
+          if ((Get-FileHash $manifest).Hash -ne (Get-FileHash 'dist/release/SHA256SUMS.txt').Hash) {
+            throw 'Published checksum manifest differs from packaged manifest.'
+          }
+          foreach ($line in Get-Content -LiteralPath $manifest) {
+            $parts = $line -split '  ', 2
+            $hash = (Get-FileHash -LiteralPath (Join-Path $destination $parts[1]) -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($hash -ne $parts[0]) { throw "Published checksum mismatch: $($parts[1])" }
+            Write-Host "::notice title=Published asset verified::$($parts[1]) sha256=$hash"
+          }

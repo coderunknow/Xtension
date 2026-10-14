@@ -16,6 +16,7 @@ namespace Xtension
     internal sealed class ScanRequest
     {
         public readonly long Id;
+        public readonly long StartedMs = Clock.NowMs;
         public readonly ScanKind Kind;
         /// <summary>Controller state epoch at request time. Results from an older epoch are discarded.</summary>
         public readonly long Epoch;
@@ -54,14 +55,21 @@ namespace Xtension
         private readonly AutoResetEvent _wake = new AutoResetEvent(false);
         private readonly Thread _thread;
         private readonly Action<ScanCompletion> _completed;
+        private readonly Func<IntPtr, ScanResult> _scan;
         private ScanRequest _pending;
         private ScanRequest _running;
         private long _runningSinceMs = Clock.Never;
         private bool _stopping;
 
         public ScanWorker(string name, Action<ScanCompletion> completed)
+            : this(name, completed, UiaTabScanner.Scan)
+        {
+        }
+
+        internal ScanWorker(string name, Action<ScanCompletion> completed, Func<IntPtr, ScanResult> scan)
         {
             _completed = completed;
+            _scan = scan;
             _thread = new Thread(Run);
             _thread.Name = name;
             _thread.IsBackground = true;
@@ -93,20 +101,31 @@ namespace Xtension
             {
                 if (_stopping || _pending != null || _running != null) return false;
                 _pending = request;
+                _wake.Set();
+                return true;
             }
-            _wake.Set();
-            return true;
         }
 
         public void Dispose()
         {
-            lock (_gate) { _stopping = true; }
-            _wake.Set();
+            lock (_gate)
+            {
+                if (_stopping) return;
+                _stopping = true;
+                _pending = null;
+                _wake.Set();
+            }
             // Do not wait for a stuck UIA call. The thread is a background thread, so process exit is not blocked.
             _thread.Join(300);
         }
 
         private void Run()
+        {
+            try { RunLoop(); }
+            finally { _wake.Dispose(); }
+        }
+
+        private void RunLoop()
         {
             while (true)
             {
@@ -125,18 +144,19 @@ namespace Xtension
                 ScanResult result;
                 try
                 {
-                    result = UiaTabScanner.Scan(request.Window);
+                    result = _scan(request.Window);
                 }
                 catch (Exception ex)
                 {
                     result = ScanResult.Idle(request.Window, ScanOutcome.Error, "Quét UI Automation gặp lỗi bất ngờ. Đã ẩn nút ×.");
-                    result.Error = ex.GetType().Name + ": " + ex.Message;
+                    result.Error = ScanSafety.DescribeError("ScanWorker.Scan", ex);
                 }
 
                 lock (_gate)
                 {
                     _running = null;
                     _runningSinceMs = Clock.Never;
+                    if (_stopping) return;
                 }
 
                 try

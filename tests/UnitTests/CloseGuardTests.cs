@@ -37,8 +37,39 @@ namespace Xtension.Tests
                 Scan = scan,
                 Click = new Point(close.X + close.Width / 2, close.Y + close.Height / 2),
                 NowMs = 10000,
+                StartedMs = 9990,
                 LastSentMs = Clock.Never
             };
+        }
+
+        [Test]
+        public static void LateDeliveryRejectsEvenWithoutTimerTick()
+        {
+            CloseRequest request = ValidRequest();
+            request.StartedMs = request.NowMs - AppInfo.CloseValidationTimeoutMs;
+            Assert.IsFalse(CloseGuard.Evaluate(request).Allowed, "message loop timeout cannot authorise close");
+        }
+
+        [Test]
+        public static void ScanErrorAndWrongWindowReject()
+        {
+            CloseRequest request = ValidRequest();
+            request.Scan.Outcome = ScanOutcome.Error;
+            Assert.IsFalse(CloseGuard.Evaluate(request).Allowed, "UIA failure must not close");
+            request = ValidRequest();
+            request.Scan.Window = new IntPtr(2002);
+            Assert.IsFalse(CloseGuard.Evaluate(request).Allowed, "scan must match clicked window");
+        }
+
+        [Test]
+        public static void RightAndBottomEdgesAreOutsideCloseArea()
+        {
+            CloseRequest request = ValidRequest();
+            Rectangle area = TabGeometry.GetOverlayBounds(Tab, 96);
+            request.Click = new Point(area.Right, area.Top);
+            Assert.IsFalse(CloseGuard.Evaluate(request).Allowed, "right edge excluded");
+            request.Click = new Point(area.Left, area.Bottom);
+            Assert.IsFalse(CloseGuard.Evaluate(request).Allowed, "bottom edge excluded");
         }
 
         [Test]

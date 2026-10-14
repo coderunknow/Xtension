@@ -48,7 +48,7 @@ namespace Xtension
         public string Message = string.Empty;
         public IntPtr Window = IntPtr.Zero;
         public int Dpi = TabGeometry.BaseDpi;
-        public string WindowTitle = string.Empty;
+        public Rectangle WindowBounds;
         public readonly List<TabInfo> Tabs = new List<TabInfo>();
         public TabInfo SelectedHorizontalTab;
         public int NodesVisited;

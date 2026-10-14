@@ -17,23 +17,53 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 $version = ([System.IO.File]::ReadAllText((Join-Path $root 'VERSION'), $utf8NoBom)).Trim()
 $tag = 'v' + $version
+$commit = (& git -C $root rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0) { throw 'Could not identify package source commit.' }
+$dirty = @(& git -C $root status --porcelain)
+if ($LASTEXITCODE -ne 0) { throw 'Could not inspect package source tree.' }
+if ($dirty.Count -gt 0 -and -not $AllowDirtySource) { throw 'Working tree is not clean; source ZIP would not match HEAD.' }
+
+# Validate provenance BEFORE deleting old packages or copying binaries. A successful old build is not this candidate.
+foreach ($arch in @('x86', 'x64')) {
+    $built = Join-Path $root "dist\Xtension-win-$arch.exe"
+    $stampPath = $built + '.build.json'
+    if (-not (Test-Path -LiteralPath $built -PathType Leaf)) { throw "Missing $arch build: $built" }
+    if (-not (Test-Path -LiteralPath $stampPath -PathType Leaf)) { throw "Missing build provenance: $stampPath" }
+    $stamp = Get-Content -LiteralPath $stampPath -Raw | ConvertFrom-Json
+    if ($stamp.commit -ne $commit -or $stamp.version -ne $version -or $stamp.architecture -ne $arch) {
+        throw "Stale or mismatched $arch build provenance. Rebuild this commit."
+    }
+    if ($stamp.dirty -and -not $AllowDirtySource) { throw "The $arch binary was built from a dirty source tree." }
+    if ($stamp.sha256 -ne (Get-FileHash -LiteralPath $built -Algorithm SHA256).Hash.ToLowerInvariant()) {
+        throw "Build provenance checksum mismatch for $arch."
+    }
+    if ([System.Diagnostics.FileVersionInfo]::GetVersionInfo($built).ProductVersion -ne $version) {
+        throw "Binary version mismatch for $arch."
+    }
+    $stream = [System.IO.File]::OpenRead($built)
+    $reader = New-Object System.IO.BinaryReader($stream)
+    try {
+        $stream.Position = 0x3c
+        $pe = $reader.ReadInt32()
+        $stream.Position = $pe
+        if ($reader.ReadUInt32() -ne 0x4550) { throw "Invalid PE signature for $arch." }
+        $machine = $reader.ReadUInt16()
+        $expected = if ($arch -eq 'x86') { 0x14c } else { 0x8664 }
+        if ($machine -ne $expected) { throw "Binary architecture mismatch for $arch." }
+    } finally { $reader.Dispose(); $stream.Dispose() }
+}
+
 $releaseDir = Join-Path $root 'dist\release'
 if (Test-Path -LiteralPath $releaseDir) { Remove-Item -LiteralPath $releaseDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
-
 $assets = @{
     x86 = Join-Path $releaseDir "Xtension-$tag-win-x86.exe"
     x64 = Join-Path $releaseDir "Xtension-$tag-win-x64.exe"
 }
 foreach ($arch in @('x86', 'x64')) {
-    $built = Join-Path $root "dist\Xtension-win-$arch.exe"
-    if (-not (Test-Path -LiteralPath $built -PathType Leaf)) { throw "Missing $arch build: $built" }
-    Copy-Item -LiteralPath $built -Destination $assets[$arch]
+    Copy-Item -LiteralPath (Join-Path $root "dist\Xtension-win-$arch.exe") -Destination $assets[$arch]
 }
-
 $sourceZip = Join-Path $releaseDir "Xtension-$tag-source.zip"
-$dirty = @(git -C $root status --porcelain 2>$null)
-if ($dirty.Count -gt 0 -and -not $AllowDirtySource) { throw 'Working tree is not clean; the source ZIP would not match HEAD. Commit first or pass -AllowDirtySource for a local test.' }
 $gitArgs = @('-C', $root, 'archive', '--format=zip', "--output=$sourceZip", 'HEAD')
 & git @gitArgs
 if ($LASTEXITCODE -ne 0) { throw 'git archive failed.' }
