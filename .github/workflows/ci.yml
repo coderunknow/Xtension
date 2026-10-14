@@ -86,3 +86,23 @@ jobs:
       - name: Verify packaging and reject stale provenance
         shell: powershell
         run: ./scripts/test-package.ps1
+
+  brave-smoke:
+    name: Isolated real Brave smoke
+    needs: static-and-tests
+    runs-on: windows-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Build candidate and Windows harness
+        shell: powershell
+        run: |
+          ./scripts/build.ps1 -Arch x64
+          ./scripts/test-windows.ps1 -Arch x64
+      - name: Run shipped candidate against isolated Brave profile
+        shell: powershell
+        run: ./scripts/test-brave.ps1 -Arch x64

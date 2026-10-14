@@ -55,14 +55,21 @@ namespace Xtension
         private readonly AutoResetEvent _wake = new AutoResetEvent(false);
         private readonly Thread _thread;
         private readonly Action<ScanCompletion> _completed;
+        private readonly Func<IntPtr, ScanResult> _scan;
         private ScanRequest _pending;
         private ScanRequest _running;
         private long _runningSinceMs = Clock.Never;
         private bool _stopping;
 
         public ScanWorker(string name, Action<ScanCompletion> completed)
+            : this(name, completed, UiaTabScanner.Scan)
+        {
+        }
+
+        internal ScanWorker(string name, Action<ScanCompletion> completed, Func<IntPtr, ScanResult> scan)
         {
             _completed = completed;
+            _scan = scan;
             _thread = new Thread(Run);
             _thread.Name = name;
             _thread.IsBackground = true;
@@ -137,7 +144,7 @@ namespace Xtension
                 ScanResult result;
                 try
                 {
-                    result = UiaTabScanner.Scan(request.Window);
+                    result = _scan(request.Window);
                 }
                 catch (Exception ex)
                 {
@@ -149,6 +156,7 @@ namespace Xtension
                 {
                     _running = null;
                     _runningSinceMs = Clock.Never;
+                    if (_stopping) return;
                 }
 
                 try

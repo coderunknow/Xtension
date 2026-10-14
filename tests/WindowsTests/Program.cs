@@ -16,6 +16,7 @@ namespace Xtension.Tests
             NativeMethods.EnablePerMonitorDpiAwareness();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            if (args.Length == 4 && args[0] == "--brave") return BraveAcceptance.Run(args[1], args[2], args[3]);
             if (args.Length != 0 && args[0] == "--fixture")
             {
                 Form fixture = new Form { Text = "Xtension synthetic UIA fixture", Location = new Point(20, 20), StartPosition = FormStartPosition.Manual, Size = new Size(700, 300) };
@@ -173,6 +174,76 @@ namespace Xtension.Tests
                 Assert.IsTrue(overlay.ShowAt(bounds, out error), "re-show at unchanged bounds");
                 Assert.IsFalse(overlay.ShowAt(Rectangle.Empty, out error), "invalid bounds hidden");
                 Assert.IsFalse(overlay.Visible, "fail closed");
+            }
+        }
+
+        [Test]
+        public static void WorkerBusyErrorRecoveryAndDisposalAreBounded()
+        {
+            using (ManualResetEvent entered = new ManualResetEvent(false))
+            using (ManualResetEvent release = new ManualResetEvent(false))
+            using (AutoResetEvent delivered = new AutoResetEvent(false))
+            {
+                int calls = 0;
+                ScanCompletion last = null;
+                using (ScanWorker worker = new ScanWorker("Synthetic scanner", delegate(ScanCompletion completion)
+                {
+                    last = completion;
+                    delivered.Set();
+                }, delegate(IntPtr window)
+                {
+                    Assert.AreEqual(ApartmentState.MTA, Thread.CurrentThread.GetApartmentState(), "UIA worker apartment");
+                    int call = Interlocked.Increment(ref calls);
+                    entered.Set();
+                    if (!release.WaitOne(5000)) throw new TimeoutException("fixture deadline");
+                    if (call == 1) throw new InvalidOperationException("PRIVATE provider message");
+                    return ScanResult.Idle(window, ScanOutcome.NoTabs, "Synthetic recovery");
+                }))
+                {
+                    try
+                    {
+                        ScanRequest first = new ScanRequest(1, ScanKind.Overlay, 0, new IntPtr(1), Point.Empty);
+                        Assert.IsTrue(worker.TrySubmit(first), "first request accepted");
+                        Assert.IsTrue(entered.WaitOne(5000), "worker started");
+                        Assert.IsFalse(worker.TrySubmit(first), "busy lane refuses second request");
+                        release.Set();
+                        Assert.IsTrue(delivered.WaitOne(5000), "error delivered");
+                        Assert.AreEqual(ScanOutcome.Error, last.Result.Outcome, "exception fails closed");
+                        Assert.IsFalse(last.Result.Error.Contains("PRIVATE"), "provider message redacted");
+                        Assert.IsTrue(worker.TrySubmit(new ScanRequest(2, ScanKind.Overlay, 0, new IntPtr(1), Point.Empty)), "error does not wedge lane");
+                        Assert.IsTrue(delivered.WaitOne(5000), "recovery delivered");
+                        Assert.AreEqual(ScanOutcome.NoTabs, last.Result.Outcome, "recovery outcome");
+                        worker.Dispose();
+                        worker.Dispose();
+                        Assert.IsFalse(worker.TrySubmit(first), "disposed worker refuses submissions");
+                    }
+                    finally { release.Set(); }
+                }
+            }
+        }
+
+        [Test]
+        public static void ControllerRejectsOldEpochAndDashboardCannotShowOverlay()
+        {
+            using (Control invoker = new Control())
+            using (CloseButtonOverlay overlay = new CloseButtonOverlay())
+            {
+                invoker.CreateControl();
+                using (ActiveTabController controller = new ActiveTabController(overlay, invoker, true))
+                {
+                    System.Reflection.MethodInfo complete = typeof(ActiveTabController).GetMethod("OnScanCompleted",
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    ScanRequest old = new ScanRequest(1, ScanKind.Dashboard, 0, new IntPtr(1), Point.Empty);
+                    ScanResult result = ScanResult.Idle(old.Window, ScanOutcome.Ready, "Synthetic dashboard");
+                    complete.Invoke(controller, new object[] { new ScanCompletion(old, result) });
+                    Assert.IsTrue(controller.GetSnapshot().Scan == result, "dashboard accepts diagnostics only");
+                    Assert.IsFalse(overlay.Visible, "dashboard can never authorize visibility");
+                    controller.SetEnabled(false);
+                    controller.SetEnabled(true);
+                    complete.Invoke(controller, new object[] { new ScanCompletion(old, result) });
+                    Assert.IsTrue(controller.GetSnapshot().Scan == null, "old epoch cannot restore confirmation");
+                    Assert.IsFalse(overlay.Visible, "old result remains hidden");
+                }
             }
         }
 

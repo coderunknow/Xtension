@@ -222,6 +222,9 @@ namespace Xtension
             if (!ScanSafety.IsFresh(request.StartedMs, Clock.NowMs, AppInfo.ScanStaleMs))
             {
                 InvalidateConfirmation();
+                // Preserve diagnostics, never authorization, even when a slow provider finally returns an error.
+                _latest = completion.Result;
+                LogOutcomeIfChanged(completion.Result);
                 NotifyChanged();
                 return;
             }
@@ -229,6 +232,7 @@ namespace Xtension
             if (request.Kind == ScanKind.Dashboard)
             {
                 _latest = completion.Result;
+                LogOutcomeIfChanged(completion.Result);
                 NotifyChanged();
                 return;
             }
@@ -245,7 +249,7 @@ namespace Xtension
             ScanResult result = completion.Result;
             _latest = result;
             bool coolingDown = !Clock.HasElapsed(_lastSentMs, AppInfo.CloseCooldownMs);
-            if (result.Outcome == ScanOutcome.Ready && !coolingDown)
+            if (result.Outcome == ScanOutcome.Ready && !coolingDown && !_stalled)
             {
                 if (result.WindowBounds != NativeMethods.GetWindowBounds(request.Window)
                     || result.Dpi != NativeMethods.GetWindowDpi(request.Window))
