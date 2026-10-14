@@ -26,7 +26,7 @@ try {
     Write-Host ("Compiling " + $coreSources.Count + " core and " + $testSources.Count + " test files with " + $csc)
 
     $arguments = @(
-        '/nologo', '/codepage:65001', '/target:exe', '/debug:portable', '/langversion:5', '/warn:4',
+        '/nologo', '/codepage:65001', '/target:exe', '/debug:pdbonly', '/langversion:5', '/warn:4',
         '/r:System.dll', '/r:System.Drawing.dll',
         "/out:$output"
     ) + $coreSources + $testSources + @($generated)
