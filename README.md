@@ -76,7 +76,7 @@ The version comes only from `VERSION`. Edit that file to change it.
 | Real Brave smoke | **Passed** with v1.97.56, x86/x64 EXEs, Windows runner at 96 DPI: overlay, switches, multiple windows, focus changes, modifiers, exact selected-tab close, window geometry, many tabs and long title. |
 | Full desktop acceptance | **Incomplete.** Physical DPI/multiple monitors, rapid-click race stress, tray/startup/graceful exit and unsupported arrangements still need manual coverage. |
 
-Release notes state which items were verified for each release.
+Release notes state which items were verified for each release. The dev2 published EXEs were also downloaded, checksum-verified and exercised in [Windows CI](https://github.com/coderunknow/Xtension/actions/runs/38579364444), not just rebuilt from source.
 
 ## Development
 
