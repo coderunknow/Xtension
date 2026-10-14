@@ -56,3 +56,15 @@ Decisions recorded from this request and the standing requirements:
 Status: source written and statically checked, not compiled or run in this environment. Nothing is claimed as tested until CI passes. GUI and Brave runtime behaviour is unverified.
 
 Open item: the six earlier Vietnamese request quotes that the release plan calls for could not be restored verbatim from the session record. Only the original intent quote (Entry 001) and the request above are recorded here. Add the missing quotes by appending a new entry; do not edit this one.
+
+
+## Entry 007 — Release v0.1.0-dev1 published as prerelease (2026-10-14)
+
+Decisions and outcomes, recorded without editing earlier entries:
+
+- Tag `v0.1.0-dev1` points to commit `8774575`, which passed CI run 38568637454 (static checks, unit tests, MSBuild check, x86 and x64 builds). The release workflow (run 38568996101) then published the GitHub Release titled `Xtension v0.1.0-dev1` as a prerelease, not a draft, and not latest.
+- Published assets: x86 EXE, x64 EXE, source ZIP, and `SHA256SUMS.txt`. The release notes are the CHANGELOG section for 0.1.0-dev1 plus `docs/RELEASE_CAPABILITIES.md`.
+- What is verified: the C# source compiles with the .NET Framework csc in CI, the pure-core unit tests pass in CI, and the release pipeline runs end to end.
+- What is not verified: runtime behavior in Brave, the overlay's placement and click-to-close, DPI scaling, the Brave setting interaction, and tray and dashboard behavior. The Brave setting "Always hide tab close button" is not confirmed in any source gathered.
+- Performance claims: none. Measurements are still needed on a device.
+- Open items: the six earlier Vietnamese request quotes are still not recorded verbatim (the owner must supply them). PR #1 is open for review; its merge is the owner's decision.

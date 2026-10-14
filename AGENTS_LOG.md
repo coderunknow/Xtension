@@ -35,3 +35,15 @@ Rules: append new dated entries at the bottom. Do not rewrite or delete earlier 
 - Run 38567945567: "Static checks and unit tests" passed (source checks, csc compile of the core and tests, unit tests run). "MSBuild project check" passed. The x86 and x64 builds failed on csc flag `/deterministic`, which the .NET Framework 4.8 csc does not accept. Removed that flag.
 - Earlier failures in this series were fixed with `/debug:pdbonly` (csc rejects `portable`) and by removing a read of `$LASTEXITCODE` before any native command.
 - Source of these results: check-run annotations via api.github.com (CI logs are not downloadable from the sandbox).
+
+## 2026-10-14 — CI run 5 and release run: green; corrections to earlier notes
+
+- Correction: earlier notes said `src/Program.cs` was missing. It is present and tracked (entry point with single-instance handling, DPI setup, and exception handlers). The build and MSBuild jobs compile it.
+- Run 38568246970 (head `1a6017d`): the x86 and x64 builds failed on `WindowsBase.dll` not found. It lives under `Framework64\v4.0.30319\WPF\`, and the simple-name fallback does not work for csc. Fixed in `8774575`: each reference is resolved from `WPF\` first, then the framework folder, and the script fails with a clear message if one is missing.
+- Run 38568637454 (head `8774575`, PR #1): all four jobs passed: static checks and unit tests, MSBuild project check, build x86, build x64. Each build uploaded its EXE artifact. Source of results: check-run status and conclusions via api.github.com.
+- Tag `v0.1.0-dev1` created as an annotated tag on `8774575`, the CI-verified commit, and pushed. Tags were not moved or deleted.
+- Run 38568996101 (tag push, release workflow): verify tag, build x86, build x64, and publish prerelease all succeeded.
+- Published release: title `Xtension v0.1.0-dev1`, prerelease, not draft, no release marked latest (the latest-release API returns 404). Assets: `Xtension-v0.1.0-dev1-win-x86.exe` (67584 bytes), `Xtension-v0.1.0-dev1-win-x64.exe` (67072 bytes), `Xtension-v0.1.0-dev1-source.zip` (72537 bytes), `SHA256SUMS.txt` (296 bytes).
+- Not verified: downloading `SHA256SUMS.txt` back from the release failed with an EOF from the release-asset host, which is outside the allowed hosts. The manifest content was not read here. The workflow self-verifies the checksums before publishing.
+- Not verified: anything at runtime. The EXEs were compiled in CI but not run. No GUI or Brave behavior has been tested. No performance numbers have been measured.
+- Open: the six earlier Vietnamese quotes (see DESIGN_LOG entry 006) are still missing. PR #1 is open and has not been merged.
