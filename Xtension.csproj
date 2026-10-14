@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSBuild entry point for IDEs and the CI msbuild check. Release binaries are produced by scripts/build.ps1,
+  which compiles the same explicit file list with csc.exe. scripts/verify-source.ps1 fails if the two drift.
+  Language version is C# 5 (.NET Framework 4.8 compiler): do not use ?., $"", nameof, out var, or expression bodies.
+-->
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{6D4A92B5-BA67-44DA-98A3-1C7F9D360110}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>Xtension</RootNamespace>
+    <AssemblyName>Xtension</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <ApplicationManifest>build\generated\app.manifest</ApplicationManifest>
+    <CodePage>65001</CodePage>
+    <LangVersion>5</LangVersion>
+    <StartupObject>Xtension.Program</StartupObject>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <Deterministic>true</Deterministic>
+    <NoWin32Manifest>false</NoWin32Manifest>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <DefineConstants>TRACE</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup>
+    <PlatformTarget Condition=" '$(Platform)' == 'x86' ">x86</PlatformTarget>
+    <PlatformTarget Condition=" '$(Platform)' == 'x64' ">x64</PlatformTarget>
+    <PlatformTarget Condition=" '$(Platform)' != 'x86' And '$(Platform)' != 'x64' ">AnyCPU</PlatformTarget>
+    <WarningLevel>4</WarningLevel>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="UIAutomationClient" />
+    <Reference Include="UIAutomationTypes" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="src\AssemblyInfo.cs" />
+    <Compile Include="src\Program.cs" />
+    <Compile Include="src\Core\AppInfo.cs" />
+    <Compile Include="src\Core\AppLog.cs" />
+    <Compile Include="src\Core\AppPaths.cs" />
+    <Compile Include="src\Core\Clock.cs" />
+    <Compile Include="src\Core\CloseGuard.cs" />
+    <Compile Include="src\Core\SettingsStore.cs" />
+    <Compile Include="src\Core\TabGeometry.cs" />
+    <Compile Include="src\Core\TabModels.cs" />
+    <Compile Include="src\Core\TabSelector.cs" />
+    <Compile Include="src\Interop\KeyboardInjector.cs" />
+    <Compile Include="src\Interop\NativeMethods.cs" />
+    <Compile Include="src\Interop\ProcessIdentity.cs" />
+    <Compile Include="src\Uia\UiaTabScanner.cs" />
+    <Compile Include="src\App\ActiveTabController.cs" />
+    <Compile Include="src\App\ScanWorker.cs" />
+    <Compile Include="src\App\SingleInstance.cs" />
+    <Compile Include="src\App\StartupRegistration.cs" />
+    <Compile Include="src\App\TrayAppContext.cs" />
+    <Compile Include="src\UI\CloseButtonOverlay.cs" />
+    <Compile Include="src\UI\DiagnosticsForm.cs" />
+    <Compile Include="src\UI\MainForm.cs" />
+    <Compile Include="src\UI\TrayIcon.cs" />
+    <Compile Include="build\generated\VersionInfo.g.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="app.manifest.template" />
+    <None Include="VERSION" />
+    <None Include="scripts\update-version.ps1" />
+  </ItemGroup>
+  <Target Name="GenerateVersion" BeforeTargets="BeforeBuild">
+    <Exec Command="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\scripts\update-version.ps1&quot; -RepoRoot &quot;$(MSBuildProjectDirectory)&quot;" />
+  </Target>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
