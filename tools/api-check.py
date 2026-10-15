@@ -12,7 +12,10 @@ most exposed to:
    which is what catches a window calling a host or controller method that was
    never written;
 4. every `StringId` used anywhere must exist in the enum, and the text table must
-   have exactly one row per enum value, in enum order.
+   have exactly one row per enum value, in enum order;
+5. no local declaration repeats a name that another declaration for the same block
+   chain already introduced (the compiler's CS0136 shadowing error), which is the
+   one scope rule that is decidable without type information.
 
 Member attribution is per file: nested classes make exact attribution fragile,
 and over-approximating can only hide a finding, never invent one. Every reported
@@ -124,6 +127,83 @@ def strip_comments(text):
 
 def source_files():
     return sorted(ROOT.glob('src/**/*.cs')) + sorted(ROOT.glob('tests/**/*.cs'))
+
+
+# Local scope audit. Two of the five mistakes CI caught in this dev3 change set were local-scope mistakes: a local
+# that shadowed a name declared in an enclosing scope (CS0136, twice) and a name that no scope declared (CS0103,
+# which needs type information and is therefore not attempted here). Shadowing is decidable by hand, so it is
+# checked: two declarations of the same name are an error when one block chain is a prefix of the other (the same
+# scope twice, or an inner scope inside the scope that already declared the name). Declarations in sibling blocks,
+# and a local that repeats a field or property name, are legal and are not reported.
+# A declaration inside a `for`, `foreach`, `using` or `fixed` header is not attributed to a scope, so a
+# shadow that involves one of those headers is not reported at all.
+LOCAL_DECLARATION = re.compile(
+    r'(?:(?<=[;{}])|^)\s*'
+    r'(?:const\s+|readonly\s+|volatile\s+|static\s+)*'
+    r'(?:var|string|object|bool|char|byte|sbyte|short|ushort|int|uint|long|ulong|float|double|decimal'
+    r'|[A-Z][A-Za-z0-9_]*(?:\s*<[^<>(){};=]*>)?(?:\s*\[\s*\])*)'
+    r'\s+([a-z_][A-Za-z0-9_]*)\s*(?==|;)', re.MULTILINE)
+TYPE_HEADER = re.compile(r'\b(?:class|struct|interface|enum|namespace)\b[^{};]*$')
+
+
+def scope_declarations(text):
+    """Every declaration that belongs to a block rather than directly to a type body."""
+    scopes = []
+    stack = []
+    for index, character in enumerate(text):
+        if character == '{':
+            head = text[:index]
+            boundary = max(head.rfind(';'), head.rfind('{'), head.rfind('}'))
+            header = head[boundary + 1:] if boundary >= 0 else head
+            kind = 'type' if TYPE_HEADER.search(header) else 'block'
+            stack.append({'start': index, 'end': len(text), 'kind': kind, 'parent': stack[-1] if stack else None})
+        elif character == '}' and stack:
+            scope = stack.pop()
+            scope['end'] = index
+            scopes.append(scope)
+    if stack:
+        # Unbalanced braces: the file cannot be attributed to scopes, so say nothing about it.
+        return []
+
+    def chain(scope):
+        names = []
+        while scope is not None:
+            names.append(scope['start'])
+            scope = scope['parent']
+        return tuple(reversed(names))
+
+    found = []
+    for match in LOCAL_DECLARATION.finditer(text):
+        position = match.start(1)
+        owner = None
+        for scope in scopes:
+            if scope['start'] < position < scope['end'] and (owner is None or scope['start'] > owner['start']):
+                owner = scope
+        if owner is None or owner['kind'] == 'type':
+            # A field, property or event declaration directly in a type body may share a name with a local.
+            continue
+        found.append((match.group(1), text.count('\n', 0, position) + 1, chain(owner)))
+    return found
+
+
+def scope_problems(relative, text):
+    """Declarations that would not compile: a name declared twice in one block chain."""
+    declared = {}
+    for name, line, chain in scope_declarations(text):
+        declared.setdefault(name, []).append((line, chain))
+    problems = []
+    for name, entries in sorted(declared.items()):
+        for outer_line, outer_chain in entries:
+            for inner_line, inner_chain in entries:
+                if inner_line <= outer_line:
+                    continue
+                if inner_chain == outer_chain:
+                    problems.append('%s: line %d declares "%s" again; line %d declared it in the same scope (CS0128)'
+                                    % (relative, inner_line, name, outer_line))
+                elif len(outer_chain) < len(inner_chain) and inner_chain[:len(outer_chain)] == outer_chain:
+                    problems.append('%s: line %d declares "%s", but line %d declares it in an enclosing scope (CS0136)'
+                                    % (relative, inner_line, name, outer_line))
+    return problems
 
 
 def main():
@@ -283,12 +363,21 @@ def main():
                 problems.append('%s: %s is called with %d argument(s) but %s declares %s'
                                 % (path.relative_to(ROOT), name, count, name, sorted(arities[name])))
 
+    declarations = 0
+    for path in source_files():
+        relative = path.relative_to(ROOT)
+        text = strip_comments(path.read_text(encoding='utf-8'))
+        entries = scope_declarations(text)
+        declarations += len(entries)
+        problems.extend(scope_problems(relative, text))
+
     if problems:
         print('API AUDIT: %d problem(s)' % len(problems))
         for line in problems:
             print('  - ' + line)
         return 1
     print('API audit clean: %d types, %d StringIds, %d table rows' % (len(types), len(ids), len(rows)))
+    print('Scope audit clean: %d local declarations, no name is declared twice in one block chain' % declarations)
     return 0
 
 

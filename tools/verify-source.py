@@ -100,6 +100,17 @@ def main():
     if '<TargetFrameworkVersion>v4.8</TargetFrameworkVersion>' not in csproj:
         failures.append('Xtension.csproj must target v4.8.')
 
+    harness = (ROOT / 'scripts/test-windows.ps1').read_text(encoding='utf-8')
+    for path in sorted((ROOT / 'tests/WindowsTests').glob('*.cs')):
+        if path.name not in harness:
+            failures.append('scripts/test-windows.ps1 does not compile tests\\WindowsTests\\%s.' % path.name)
+    for script in sorted((ROOT / 'scripts').glob('*.ps1')):
+        text = script.read_text(encoding='utf-8')
+        for found in re.finditer(r'tests\\+[A-Za-z0-9_\\]+\.cs', text):
+            relative = re.sub(r'\\+', '\\\\', found.group(0))
+            if not (ROOT / relative.replace('\\', '/')).is_file():
+                failures.append('%s references a missing file: %s' % (script.name, relative))
+
     build_script = (ROOT / 'scripts/build.ps1').read_text(encoding='utf-8')
     if "'/langversion:5'" not in build_script:
         failures.append('scripts/build.ps1 does not pass /langversion:5.')

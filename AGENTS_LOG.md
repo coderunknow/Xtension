@@ -194,3 +194,25 @@ Rules: append new dated entries at the bottom. Do not rewrite or delete earlier 
   harness then reported "10 passed, 0 failed" on the runner.
 - Not yet verified: the real-Brave acceptance phase for dev3. It only starts once the publication probe no longer aborts
   the job, so its result is the next thing to read from CI.
+
+## 2026-10-15 - dev3 guards: harness file lists, local scopes and readable measurements
+
+- The dev3 change set lost four CI cycles to mistakes a compiler would have caught in one pass, two of which were
+  structural rather than logical: a test file that no harness compiled (`Measurement.cs`) and a local that shadowed a
+  name in an enclosing scope (`window` in the real-Brave phase). Both classes now have a gate that runs before the push.
+- `scripts/verify-source.ps1` and its local mirror `tools/verify-source.py` gained two rules: every file under
+  `tests/WindowsTests` must be named by `scripts/test-windows.ps1` (the harness compiles a hand-written list while
+  `src/` and `tests/UnitTests` glob), and every test file a script names must exist. Both directions are proven by fault
+  injection: removing the `Measurement.cs` entry, and pointing a script at a non-existent test file, each make the check
+  fail with the file named.
+- `tools/api-check.py` gained a local-scope audit: it attributes every local declaration to its block chain and reports a
+  name declared twice in one chain - the compiler's CS0136 (a declaration inside a scope that already declared the name)
+  and CS0128 (the same scope twice). Sibling blocks, two methods and a local that repeats a field name are legal and are
+  not reported; declarations inside `for`/`foreach`/`using` headers are not attributed to a scope at all, so a shadow
+  that involves one is not reported. Proven by fault injection: restoring the pre-fix `window` shadow in
+  `tests/WindowsTests/BraveAcceptance.cs` reproduces exactly the two CI annotations (lines 324 and 347 against line 264,
+  CS0136) and nothing else. It cannot see a name that nothing declares (CS0103), so it does not replace a compiler; the
+  tree is currently clean at 497 local declarations.
+- `scripts/measure-performance.ps1` now publishes each measurement line as a notice in addition to writing the report
+  file, so the dev2-versus-dev3 numbers are readable on the checks page and not only inside the artifact download. The
+  lines contain a label and numbers only - no title, no URL.

@@ -20,7 +20,10 @@ Platform scope: Windows x86 and x64 only. Do not claim macOS or Linux support, a
 6. **Append-only logs.** `DESIGN_LOG.md` and `AGENTS_LOG.md` are append-only. Corrections are new dated entries. Do not rewrite or delete old entries. Quoted user requests stay verbatim.
 7. **No secrets.** Never commit tokens, keys, `.pfx`, `.snk`, `settings.ini`, or logs. `verify-source.ps1` scans tracked and untracked files for common token patterns.
 8. **Keep the MIT license.** Do not edit `LICENSE`.
-9. **Explicit compile list.** Every file under `src/` must appear in `Xtension.csproj`. `verify-source.ps1` enforces this.
+9. **Explicit compile list.** Every file under `src/` must appear in `Xtension.csproj`, and every file under
+   `tests/WindowsTests/` must appear in `scripts/test-windows.ps1` (that harness compiles a hand-written list while
+   everything else globs the tree, so a new test file can otherwise be compiled by nothing at all).
+   `verify-source.ps1` enforces both directions, including that every test file a script names exists.
 10. **User-visible text lives in one table.** Every user-facing string is a `StringId` in `src/Core/Strings.cs` with a Vietnamese and an English row; UI, app and interop code must not contain Vietnamese text, and `verify-source.ps1` fails if it does. Log lines and internal decision reasons stay English on purpose: they are diagnostic, not interface.
 11. **Settings go through one path.** Values live in `AppSettings` (range constants in `AppInfo`), are clamped by `Normalize()`, and are applied by the application so the controller, overlay, tray menu, dashboard and settings window cannot disagree. The settings window talks to the application only through `ISettingsHost`; a setting that only one window knows about is a bug.
 12. **Hover is a display rule, never an authorisation.** Pointer position may only decide whether the button is visible. Closing always re-validates with a fresh scan through `CloseGuard`.
@@ -39,8 +42,11 @@ msbuild Xtension.csproj /restore /p:Configuration=Release /p:Platform=x64
 ```
 
 `tools/api-check.py` and `tools/verify-source.py` are local development aids for environments without a compiler or
-PowerShell (identifier/string-table cross-check and a mirror of the static checks). They are not part of the build,
-are not shipped, and passing them is not evidence that the project compiles.
+PowerShell (identifier/string-table cross-check, a local-scope audit, and a mirror of the static checks). The scope
+audit reports a local declared twice in one block chain - the compiler's CS0136 and CS0128 - which is the one scope
+rule that needs no type information. It cannot see a name that nothing declares (CS0103), so it cannot replace a
+compiler. These tools are not part of the build, are not shipped, and passing them is not evidence that the project
+compiles.
 
 ## Architecture map
 

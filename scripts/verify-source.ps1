@@ -93,6 +93,20 @@ $expected = @($sourceFiles | ForEach-Object { $_.FullName.Substring($root.Length
 $expected += 'build\generated\VersionInfo.g.cs'
 foreach ($item in $expected) { if ($compileItems -notcontains $item) { Add-Failure "Xtension.csproj does not compile $item" } }
 foreach ($item in $compileItems) { if ($expected -notcontains $item) { Add-Failure "Xtension.csproj lists a missing or unexpected file: $item" } }
+# Test file lists are explicit too. src globs the tree and scripts/test.ps1 globs tests\UnitTests, but the Windows
+# harness compiles a hand-written list, so a new test file there can be compiled by nothing at all and a renamed one
+# can be listed forever. Both directions are checked.
+$windowsHarness = Get-Content -LiteralPath (Join-Path $root 'scripts\test-windows.ps1') -Raw
+foreach ($file in @(Get-ChildItem -LiteralPath (Join-Path $root 'tests\WindowsTests') -Filter '*.cs' -File)) {
+    if ($windowsHarness -notmatch [regex]::Escape($file.Name)) { Add-Failure "scripts/test-windows.ps1 does not compile tests\WindowsTests\$($file.Name)." }
+}
+foreach ($script in @(Get-ChildItem -LiteralPath (Join-Path $root 'scripts') -Filter '*.ps1' -File)) {
+    $text = Get-Content -LiteralPath $script.FullName -Raw
+    foreach ($found in [regex]::Matches($text, 'tests\\+[A-Za-z0-9_\\]+\.cs')) {
+        $relative = $found.Value -replace '\\+', '\'
+        if (-not (Test-Path -LiteralPath (Join-Path $root $relative) -PathType Leaf)) { Add-Failure "$($script.Name) references a missing file: $relative" }
+    }
+}
 $langVersion = $project.SelectSingleNode("//*[local-name()='LangVersion']")
 if (-not $langVersion -or $langVersion.InnerText -ne '5') { Add-Failure 'Xtension.csproj must set LangVersion 5.' }
 $framework = $project.SelectSingleNode("//*[local-name()='TargetFrameworkVersion']")

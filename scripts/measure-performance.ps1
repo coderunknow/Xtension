@@ -73,6 +73,9 @@ function Invoke-Measurement {
         if ($line -like 'MEASURE label=*') {
             Write-Host $line
             Add-Content -LiteralPath $report -Value $line
+            # The report travels as a download; an annotation travels to the checks page. Neither the label nor the
+            # numbers contain a title or a URL, so the line is safe to publish.
+            Write-Host ("::notice title=Measurement::" + $line)
         }
         elseif ($line -like 'MEASURE-INFO*') {
             Write-Host $line
