@@ -143,3 +143,18 @@ Rules: append new dated entries at the bottom. Do not rewrite or delete earlier 
 - Regression coverage written in the same change: core tests for settings persistence/clamping/corruption/reset, parameterised geometry, the hover state machine (including the grace boundary and a clock that goes backwards), string-table completeness in both languages; Windows synthetic tests for overlay resize and idempotent placement, settings-window layout at 100/125/150/200% text scaling, in-place language switching, host round trip with out-of-range values, and a real Ctrl+W chord that must be delivered in full and leave no key down; a real-Brave second phase for hover mode, the configured 40 px button, a click on a hover-shown button, persistence across a restart with Brave open and recovery from a corrupted settings file.
 - Local gates available in this environment, all green before the push: tree-sitter C# parse of every file (0 errors), the identifier/string-table cross-check (`tools/api-check.py`), the static-rule mirror (`tools/verify-source.py`, including the new rules that Vietnamese text may only appear in the string table and that `NativeMethods` may not move the pointer), and YAML validation of both workflows. These prove syntax, identifier consistency and static rules only. They do not compile the project, and no test or browser run was performed here.
 - Release plumbing added: `VERSION` = `0.1.0-dev3`, the CHANGELOG dev3 section, README settings/hover/language tables, `docs/DEV3_AUDIT.md`, an updated capability boundary, the `performance` CI job and `scripts/measure-performance.ps1` (published dev2 EXE versus candidate, same runner). Next: push, open the PR against `main` (open/unmerged), read the CI result from the run, and only then ask the owner to test the CI-built EXE.
+
+## 2026-10-15 — dev3 correction: the CacheRequest finding was wrong
+
+- CI run 38727272108 compiled the whole application and the Windows harness and failed on a single call:
+  `src/Uia/UiaTabScanner.cs` called `state.Cache.Dispose()`. In .NET Framework 4.8 `System.Windows.Automation.CacheRequest`
+  has no `Dispose`; the disposable object is the `CacheRequestActivation` returned by `Activate()`, which the existing
+  `using` block already releases. The "per-scan CacheRequest leak" recorded as finding 8 was therefore an incorrect
+  hypothesis, and the attempted fix was itself the only defect it introduced.
+- Corrected rather than hidden: the call is removed and replaced with a comment recording the verified API surface, the
+  CHANGELOG entry now says the finding was refuted instead of fixed, `docs/DEV3_AUDIT.md` finding 8 now documents the
+  investigation and its withdrawal, and the performance section lists the item under "investigated and not changed".
+  The earlier entry in this log that describes the fix stays as written; this entry supersedes its conclusion.
+- Lesson recorded for later work: this environment has no compiler, and identifier checks cannot know whether a
+  framework type exposes a member. An API-surface claim about a BCL type is only settled by the compiler, so it must be
+  stated as a hypothesis until CI has compiled it.

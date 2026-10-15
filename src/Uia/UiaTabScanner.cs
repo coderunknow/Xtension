@@ -83,12 +83,10 @@ namespace Xtension
             }
             finally
             {
-                // CacheRequest holds an unmanaged automation object; one per scan must be released.
-                if (state.Cache != null)
-                {
-                    try { state.Cache.Dispose(); }
-                    catch (Exception ex) { AppLog.WarnThrottled("uia-cache", "A UI Automation cache request could not be released: " + ex.GetType().Name); }
-                }
+                // Only the activation returned by Activate() is disposable in .NET Framework, and the using block
+                // above already releases it. CacheRequest itself exposes no release method (verified by the compiler:
+                // System.Windows.Automation.CacheRequest has no Dispose), so the request object is collected normally.
+                state.Cache = null;
             }
 
             // A final provider call can exceed the budget even if no further node is visited.
