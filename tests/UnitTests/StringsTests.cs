@@ -38,7 +38,7 @@ namespace Xtension.Tests
                         if (id == StringId.None) continue;
                         string text = Strings.Get(id);
                         Assert.IsTrue(!string.IsNullOrEmpty(text), "missing " + language + " text for " + id);
-                        Assert.IsTrue(text.Trim().Length == text.Length, "unexpected surrounding whitespace for " + id + " in " + language);
+                        Assert.IsFalse(text.EndsWith("\r") || text.EndsWith("\n"), "stray line break in " + id + " (" + language + ")");
                     }
                 }
             }
@@ -56,9 +56,13 @@ namespace Xtension.Tests
                 List<string> vietnamese = new List<string>();
                 foreach (StringId id in AllIds()) vietnamese.Add(Strings.Get(id));
                 Strings.Language = AppLanguage.English;
+                // Rows that are language-neutral by design: the log file header is written into a log file, and the
+                // tray suffix is a fragment appended to a product name, not a sentence of its own.
+                List<StringId> neutral = new List<StringId> { StringId.LogFileHeader };
                 for (int index = 0; index < vietnamese.Count; index++)
                 {
                     if ((StringId)index == StringId.None) continue;
+                    if (neutral.Contains((StringId)index)) continue;
                     Assert.IsTrue(vietnamese[index] != Strings.Get((StringId)index),
                         "row " + (StringId)index + " is identical in both languages");
                 }

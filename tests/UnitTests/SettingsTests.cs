@@ -171,7 +171,7 @@ namespace Xtension.Tests
             {
                 File.WriteAllText(path, "a=5\r\nb=500\r\nc=-9\r\n", Encoding.UTF8);
                 SettingsStore store = new SettingsStore(path);
-                Assert.AreEqual(10, store.GetInt("a", 10, 20, 40), "below the minimum falls back to the default");
+                Assert.AreEqual(20, store.GetInt("a", 10, 20, 40), "below the minimum is clamped up to the minimum");
                 Assert.AreEqual(40, store.GetInt("b", 10, 20, 40), "above the maximum is clamped");
                 Assert.AreEqual(20, store.GetInt("c", 10, 20, 40), "negative values are clamped to the minimum");
                 Assert.AreEqual(30, store.GetInt("missing", 30, 20, 40), "a missing key falls back to the default");

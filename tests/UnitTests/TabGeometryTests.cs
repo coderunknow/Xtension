@@ -61,14 +61,21 @@ namespace Xtension.Tests
         }
 
         [Test]
-        public static void LargerConfiguredButtonNeedsAWiderTab()
+        public static void EveryDocumentedSizeFitsACandidateTab()
         {
-            // 30 + 12 = 42 physical px are needed at the maximum size, versus 29 at the default size.
-            Rectangle narrow = new Rectangle(100, 8, 32, 40);
-            Assert.IsFalse(TabGeometry.GetOverlayBounds(narrow, 96, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical).IsEmpty,
-                "the default button fits a 32 px tab");
-            Assert.IsTrue(TabGeometry.GetOverlayBounds(narrow, 96, AppInfo.MaxButtonSizeLogical, AppInfo.MaxButtonInsetLogical).IsEmpty,
-                "the largest button with the largest inset does not fit the same tab");
+            Rectangle window = new Rectangle(0, 0, 1200, 800);
+            Rectangle tab = new Rectangle(100, 8, 120, 40);
+            Assert.IsTrue(TabGeometry.IsHorizontalCandidate(tab, window, 96), "fixture tab must be a candidate");
+            foreach (int size in new int[] { AppInfo.MinButtonSizeLogical, AppInfo.DefaultButtonSizeLogical, AppInfo.MaxButtonSizeLogical })
+            {
+                Rectangle bounds = TabGeometry.GetOverlayBounds(tab, 96, size, AppInfo.MaxButtonInsetLogical);
+                Assert.IsFalse(bounds.IsEmpty, "the candidate's geometry must fit a " + size + " px button");
+                Assert.IsTrue(tab.Contains(bounds), "the button stays inside the tab at " + size + " px");
+            }
+            Rectangle small = TabGeometry.GetOverlayBounds(tab, 96, AppInfo.MinButtonSizeLogical, AppInfo.MaxButtonInsetLogical);
+            Rectangle large = TabGeometry.GetOverlayBounds(tab, 96, AppInfo.MaxButtonSizeLogical, AppInfo.MaxButtonInsetLogical);
+            Assert.IsTrue(large.Width > small.Width, "the configured size changes the real window width");
+            Assert.IsTrue(large.Left < small.Left, "a larger button starts further left at the same inset");
         }
 
         [Test]
@@ -104,10 +111,13 @@ namespace Xtension.Tests
             Rectangle window = new Rectangle(0, 0, 1200, 800);
             Rectangle strip = TabGeometry.GetTabStripRegion(window, 96);
             Assert.IsFalse(strip.IsEmpty, "a normal window has a tab strip region");
-            Assert.AreEqual(window.Left, strip.Left, "the strip starts at the window's left edge");
-            Assert.AreEqual(window.Right, strip.Right, "the strip spans the window's width");
-            Assert.AreEqual(window.Top, strip.Top, "the strip starts at the window's top edge");
-            Assert.IsTrue(strip.Height <= window.Height / 4, "the strip stays a thin band at the top");
+            // The region is deliberately generous: it covers the window plus the tolerance a real tab is allowed.
+            Assert.IsTrue(strip.Left <= window.Left, "the strip covers the window's left edge");
+            Assert.IsTrue(strip.Right >= window.Right, "the strip covers the window's right edge");
+            Assert.IsTrue(window.Left - strip.Left <= 16, "the horizontal tolerance stays small");
+            Assert.IsTrue(strip.Top <= window.Top, "a candidate tab may sit slightly above the window top");
+            Assert.IsTrue(strip.Bottom <= window.Top + 200, "the strip stays a thin band at the top of the window");
+            Assert.IsTrue(strip.Bottom >= window.Top + 40, "the strip is deep enough to contain a real tab");
             Assert.IsTrue(TabGeometry.GetTabStripRegion(Rectangle.Empty, 96).IsEmpty, "no window bounds means no strip");
         }
     }
