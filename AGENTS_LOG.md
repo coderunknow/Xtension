@@ -312,3 +312,36 @@ Rules: append new dated entries at the bottom. Do not rewrite or delete earlier 
   dev3 work left in the working tree. Nothing was lost - the branch tip `27cba73` was verified on the remote with
   `git ls-remote`, and the local branch was restored to it with `git reset --mixed origin/arena/8c38d759-xtension`, which
   does not touch `main` or the working tree. `main` was never modified by this session.
+
+## 2026-10-15 — dev3 merged and published
+
+- Owner direction, quoted verbatim: "Ok but the delay is significant. So please make it as fast as possible cleanly. And
+  the setting is lag at the opening. Finally merge and tag release. Audit carefully. Make no mistakes."
+- Latency work and the new guards are recorded in the entry above and in `DESIGN_LOG.md` entry 015. CI on the tip
+  `198711c` (run 38743356212) was green in all eight jobs: static checks and unit tests, MSBuild project check, Build x86,
+  Build x64, real-Brave smoke x86, real-Brave smoke x64, dev2-vs-candidate resource measurement, package provenance and
+  checksums. The synthetic Windows harness reported 11 passed / 0 failed in both architectures (the new layout-stability
+  test included) and the real-Brave job passed its 18 checks in both architectures.
+- Measured on that run, dev2 published EXE versus this candidate, same runner, 20 s samples, browser in front: idle CPU
+  3.65 % -> 1.29 %, working set 47.5 -> 43.4 MiB, UI Automation scan p50 70.2 -> 25.1 ms, p90 79.0 -> 27.4 ms. With no
+  browser running both measure ~0 % CPU and the same working set.
+- PR #3 was merged with a merge commit (the same style as PR #1 and PR #2): `main` is now
+  `50fbb2c9f93d1880f772fc6cc03fcf4fce8fa812`, whose second parent is the branch tip `198711c`. The branch itself was not
+  deleted and this session pushed nothing to `main` (the merge was performed through the pull request).
+- Annotated tag `v0.1.0-dev3` (tag object `5c9b794`, commit `50fbb2c`) was created and pushed; release workflow run
+  38744553235 succeeded in every job: verify-tag, Build x86, Build x64, Publish prerelease.
+- Published prerelease `v0.1.0-dev3` (2026-10-15T13:40:43Z, `prerelease=true`, `draft=false`, four assets). The workflow's
+  own verification step downloaded every published asset again, compared the published manifest with the packaged one
+  byte for byte and recomputed each digest; the digests are
+  x64 `217393fb2852e63c92e344332851dfd7c3d08bb3e877f7998ff33b9bca20ef00`,
+  x86 `a5738490e358095e9ef93bdc2a0b559686de1f6e5b6e14ad0b570ba872d45f1f`,
+  source `d36272ba6e5a6b987a384ea5980fbeb62bd28acf6a96ba1d1c070015e6c5cfe1`.
+  `GET /repos/coderunknow/Xtension/releases/latest` returns 404, so no release is marked latest.
+- dev1 and dev2 are untouched: their tag objects (`24866c0` -> `8774575`, `7497061` -> `816d766`), asset names and asset
+  sizes are exactly as they were before this release.
+- Limits of this environment, stated rather than implied. The sandbox network allowlist does not include the release
+  asset host, so this session could not download the published EXEs to re-hash them itself; the digest evidence above is
+  the release workflow's verification step. There is still no compiler, no PowerShell and no Windows desktop here, so
+  every build, test and Brave result quoted for dev3 is a CI result with its run id. This log entry is committed on the
+  session branch after the merge, so it is not part of `main` and not part of the tag; the session is not permitted to
+  push to `main`.
