@@ -251,3 +251,20 @@ Rules: append new dated entries at the bottom. Do not rewrite or delete earlier 
   inset fits the CI runner's Brave tab) and keeps the fail-closed rule for a tab that cannot hold the configuration. The
   product is unchanged - the rule and its unit tests were always correct; only my explanation of one CI failure was
   wrong. Lesson, again: a failed wait is evidence about the fixture until it is diagnosed, not about the product.
+
+## 2026-10-15 - dev3 safety review and one documentation over-claim
+
+- With CI green and the owner's manual pass still pending, I re-read the safety-critical paths of this change set with
+  fresh eyes: `CloseGuard.Evaluate` and the close path in `ActiveTabController` (epoch check, foreground and modifier
+  re-read immediately before injection, cooldown, click containment in the configured × area), the hover rule and its
+  grace period (`HoverPolicy`, including the fail-closed handling of a clock that moves backwards), `ScanWorker`
+  (one pending request, one running scan, a completion callback that cannot kill the worker thread), `SettingsStore`
+  (cache, bounds, atomic replace, temporary-file cleanup) and `CloseButtonOverlay.ShowAt` (idempotent placement, native
+  bounds re-verified after every move, hide on failure). No defect was found in the code, and nothing in the review
+  needed a source change.
+- One documentation over-claim was found and corrected: audit finding 2 said an oversized settings file is "left
+  untouched on disk", which reads as an absolute promise even though the next settings change rewrites the file, as it
+  does for any other file. The finding now states exactly that. Documentation only; no behaviour changed and the
+  passing CI run on `50d9bc8` still stands for the code.
+- State at this point: CI is green on `50d9bc8` (all eight jobs), PR #3 is open and unmerged, no tag exists, and the
+  only outstanding gate is the owner's run of the CI-built EXE on their own Windows machine.
