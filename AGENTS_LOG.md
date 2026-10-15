@@ -174,3 +174,23 @@ Rules: append new dated entries at the bottom. Do not rewrite or delete earlier 
 - Cause worth remembering: the harness file list is hand-maintained while `Xtension.csproj` and the application build
   glob the tree, so a new test file can be compiled by nothing and still be "missing" at the same time. A guard for
   that gap is being added to the local and CI check sets.
+
+## 2026-10-15 - dev3 CI: builds and measurement green, two harness defects fixed
+
+- CI run 38728609891 (`120a5de`): "Static checks and unit tests", "MSBuild project check", "Build x86", "Build x64" and
+  "Package provenance and checksums" all succeeded, and the new "Published baseline vs candidate resources (x64)" job
+  succeeded as well, so both dev3 EXEs and the published dev2 baseline were measured on the same runner. The only red
+  jobs were the two "Isolated real Brave smoke" jobs, and they failed in step 4, "Detect matching published application
+  source", before any browser work started.
+- Cause: that step ran `& gh release view <tag> --json tagName 2>$null` while `$ErrorActionPreference` was `'Stop'`. On
+  Windows PowerShell 5.1 a redirected native stderr line is promoted to a terminating error and `2>$null` does not help,
+  so the "release not found" message that `gh` writes for the still-unpublished `v0.1.0-dev3` killed the step instead of
+  the intended "no matching publication yet" fallback. The branch had never run before: it was added while `v0.1.0-dev2`
+  already existed. The probe now saves the preference, probes with `'Continue'` and decides from `$LASTEXITCODE`, and the
+  hazard is written down in `AGENTS.md` rule 5.
+- Also in this batch (`120a5de`), the Windows harness itself was made to compile: `scripts/test-windows.ps1` now lists
+  `tests\WindowsTests\Measurement.cs`, `SettingsWindowReflectsHostAndClampsEveryValue` declares the control list it
+  uses, and the real-Brave phase names the browser bounds `braveBounds` instead of shadowing `window`. The synthetic
+  harness then reported "10 passed, 0 failed" on the runner.
+- Not yet verified: the real-Brave acceptance phase for dev3. It only starts once the publication probe no longer aborts
+  the job, so its result is the next thing to read from CI.

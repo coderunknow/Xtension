@@ -13,6 +13,10 @@ Platform scope: Windows x86 and x64 only. Do not claim macOS or Linux support, a
 3. **One version source.** Edit `VERSION` only. `scripts/update-version.ps1` generates `build/generated/VersionInfo.g.cs` and `build/generated/app.manifest`. Never hard-code a version in source, docs, or the manifest template.
 4. **No private data in logs.** Never log tab titles, window titles, or URLs. `AppLog` must not reference titles. Diagnostics shows titles in the UI only.
 5. **PowerShell scripts stay ASCII.** Windows PowerShell 5.1 reads BOM-less scripts as ANSI. Put non-ASCII text in Markdown or resource files.
+   Native streams: under Windows PowerShell 5.1 a *redirected* native stderr line becomes a terminating error while
+   `$ErrorActionPreference` is `'Stop'` - `2>$null` does not prevent it. A call whose non-zero exit is expected (a
+   probe for something that may not exist) must save `$ErrorActionPreference`, set `'Continue'` for the call, and
+   decide from `$LASTEXITCODE`.
 6. **Append-only logs.** `DESIGN_LOG.md` and `AGENTS_LOG.md` are append-only. Corrections are new dated entries. Do not rewrite or delete old entries. Quoted user requests stay verbatim.
 7. **No secrets.** Never commit tokens, keys, `.pfx`, `.snk`, `settings.ini`, or logs. `verify-source.ps1` scans tracked and untracked files for common token patterns.
 8. **Keep the MIT license.** Do not edit `LICENSE`.
