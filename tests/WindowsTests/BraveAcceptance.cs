@@ -25,13 +25,20 @@ namespace Xtension.Tests
             Exception failure = null;
             Thread worker = new Thread(delegate()
             {
-                try { Exercise(bravePath, candidatePath, profile); }
+                try
+                {
+                    Exercise(bravePath, candidatePath, profile);
+                    // Second phase: the same shipped binary, started from a settings file that selects the new
+                    // hover mode and a non-default button size. It runs after the first app process is gone, because
+                    // Xtension is single-instance by design.
+                    ConfiguredBehaviour(bravePath, candidatePath, profile);
+                }
                 catch (Exception ex) { failure = ex; }
             });
             worker.IsBackground = true;
             worker.SetApartmentState(ApartmentState.MTA);
             worker.Start();
-            if (!worker.Join(180000)) { Console.WriteLine("FAIL Brave acceptance exceeded 180 seconds."); return 1; }
+            if (!worker.Join(300000)) { Console.WriteLine("FAIL Brave acceptance exceeded 300 seconds."); return 1; }
             if (failure != null)
             {
                 Console.WriteLine("FAIL Brave acceptance: " + failure.GetType().Name + ": " + failure.Message);
@@ -60,7 +67,7 @@ namespace Xtension.Tests
                     ScanResult initial = null;
                     try
                     {
-                        Wait(delegate { initial = UiaTabScanner.Scan(brave); return initial.Outcome == ScanOutcome.Ready && initial.Tabs.Count == 3; }, 20000,
+                        Wait(delegate { initial = UiaTabScanner.Scan(brave, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical); return initial.Outcome == ScanOutcome.Ready && initial.Tabs.Count == 3; }, 20000,
                             "initial Brave scan did not confirm three selected-strip tabs");
                     }
                     catch (AssertionFailure)
@@ -72,7 +79,7 @@ namespace Xtension.Tests
                     SetForegroundWindow(brave);
                     IntPtr overlay = IntPtr.Zero;
                     Wait(delegate { overlay = FindVisibleWindow(app.Id, true); return overlay != IntPtr.Zero; }, 10000, "candidate overlay did not appear");
-                    Assert.AreEqual(TabGeometry.GetOverlayBounds(initial.SelectedHorizontalTab.Bounds, initial.Dpi), NativeMethods.GetWindowBounds(overlay), "real overlay position");
+                    Assert.AreEqual(TabGeometry.GetOverlayBounds(initial.SelectedHorizontalTab.Bounds, initial.Dpi, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical), NativeMethods.GetWindowBounds(overlay), "real overlay position");
                     Console.WriteLine("PASS shipped candidate EXE displays overlay without taking Brave foreground");
 
                     for (int i = 0; i < 3; i++)
@@ -81,11 +88,11 @@ namespace Xtension.Tests
                         Key(0x11, false); Key(0x09, false); Key(0x09, true); Key(0x11, true);
                         Wait(delegate
                         {
-                            ScanResult current = UiaTabScanner.Scan(brave);
+                            ScanResult current = UiaTabScanner.Scan(brave, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
                             overlay = FindVisibleWindow(app.Id, true);
                             return current.Outcome == ScanOutcome.Ready && overlay != IntPtr.Zero
                                 && NativeMethods.GetWindowBounds(overlay) != previous
-                                && NativeMethods.GetWindowBounds(overlay) == TabGeometry.GetOverlayBounds(current.SelectedHorizontalTab.Bounds, current.Dpi);
+                                && NativeMethods.GetWindowBounds(overlay) == TabGeometry.GetOverlayBounds(current.SelectedHorizontalTab.Bounds, current.Dpi, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
                         }, 7000, "overlay did not follow Ctrl+Tab");
                     }
                     Console.WriteLine("PASS three tab switches followed by actual overlay");
@@ -134,7 +141,7 @@ namespace Xtension.Tests
                         Key(modifier, false);
                         try { Click(overlay); Thread.Sleep(1500); }
                         finally { Key(modifier, true); }
-                        ScanResult scan = UiaTabScanner.Scan(brave);
+                        ScanResult scan = UiaTabScanner.Scan(brave, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
                         Assert.AreEqual(3, scan.Tabs.Count, "modifier click must not close tab/window");
                         // Dismiss any OS menu opened by releasing Alt/Win, then restore Brave.
                         Key(0x1B, false); Key(0x1B, true);
@@ -147,9 +154,9 @@ namespace Xtension.Tests
                     List<string> beforeClose = CaptureTabIds(brave, out selectedId);
                     Assert.IsTrue(selectedId != null, "unique selected identity before click");
                     Click(overlay);
-                    Wait(delegate { return UiaTabScanner.Scan(brave).Tabs.Count == 2; }, 7000, "actual click did not close exactly one tab");
+                    Wait(delegate { return UiaTabScanner.Scan(brave, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical).Tabs.Count == 2; }, 7000, "actual click did not close exactly one tab");
                     Thread.Sleep(1500);
-                    Assert.AreEqual(2, UiaTabScanner.Scan(brave).Tabs.Count, "only one close after click");
+                    Assert.AreEqual(2, UiaTabScanner.Scan(brave, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical).Tabs.Count, "only one close after click");
                     string afterSelected;
                     List<string> afterClose = CaptureTabIds(brave, out afterSelected);
                     Assert.IsFalse(afterClose.Contains(selectedId), "selected identity was removed");
@@ -185,7 +192,7 @@ namespace Xtension.Tests
                         Key(0x11, false); Key(0x54, false); Key(0x54, true); Key(0x11, true);
                         Thread.Sleep(100);
                     }
-                    Wait(delegate { return UiaTabScanner.Scan(brave).Tabs.Count == 12; }, 10000, "many-tab fixture not ready");
+                    Wait(delegate { return UiaTabScanner.Scan(brave, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical).Tabs.Count == 12; }, 10000, "many-tab fixture not ready");
                     WaitForOverlay(app.Id, brave, 10000);
                     Console.WriteLine("PASS selected horizontal tab with twelve tabs");
 
@@ -197,7 +204,7 @@ namespace Xtension.Tests
                     {
                         Wait(delegate
                         {
-                            ScanResult scan = UiaTabScanner.Scan(brave);
+                            ScanResult scan = UiaTabScanner.Scan(brave, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
                             return scan.Outcome == ScanOutcome.Ready && scan.SelectedHorizontalTab.Name.Length >= 300;
                         }, 15000, "long-title fixture not selected");
                         WaitForOverlay(app.Id, brave, 7000);
@@ -210,6 +217,196 @@ namespace Xtension.Tests
                     if (app != null) { if (!app.HasExited) { app.Kill(); app.WaitForExit(5000); } app.Dispose(); }
                     if (!browser.HasExited) { browser.Kill(); browser.WaitForExit(5000); }
                 }
+            }
+        }
+
+        /// <summary>
+        /// Real-Brave acceptance for the dev3 settings: hover visibility, a configured × size, persistence across a
+        /// restart while Brave stays open, and recovery from a corrupted settings file. The button is only ever
+        /// clicked after a hover showed it, so this also proves that hovering cannot authorise a close by itself.
+        /// </summary>
+        private static void ConfiguredBehaviour(string bravePath, string candidatePath, string profile)
+        {
+            const int configuredInset = 5;
+            int configuredSize = AppInfo.MaxButtonSizeLogical;
+            string settingsPath = AppPaths.SettingsFile;
+            string original = File.Exists(settingsPath) ? File.ReadAllText(settingsPath) : null;
+            AppPaths.EnsureDirectory();
+
+            Process browser = null;
+            Process app = null;
+            try
+            {
+                File.WriteAllText(settingsPath, "overlayEnabled=true\r\nvisibilityMode=hover\r\nbuttonSize=" + configuredSize
+                    + "\r\nbuttonInset=" + configuredInset + "\r\nhoverGraceMs=250\r\nscanIntervalMs=500\r\nlanguage=vi\r\n");
+
+                browser = Process.Start(new ProcessStartInfo(bravePath,
+                    "--user-data-dir=\"" + profile + "\" --no-first-run --no-default-browser-check --disable-background-networking " +
+                    "--disable-component-update --disable-sync --new-window about:blank about:blank about:blank") { UseShellExecute = false });
+                IntPtr brave = IntPtr.Zero;
+                Wait(delegate { brave = FindVisibleWindow(browser.Id, false); return brave != IntPtr.Zero; }, 20000, "configured-phase Brave window did not appear");
+                ShowWindow(brave, 3);
+                SetForegroundWindow(brave);
+                Wait(delegate { return NativeMethods.GetForegroundRootWindow() == brave; }, 5000, "runner could not foreground Brave for the configured phase");
+
+                ScanResult scan = null;
+                Wait(delegate
+                {
+                    scan = UiaTabScanner.Scan(brave, configuredSize, configuredInset);
+                    return scan.Outcome == ScanOutcome.Ready && scan.Tabs.Count == 3;
+                }, 20000, "configured-phase scan did not confirm three tabs");
+                Rectangle configured = TabGeometry.GetOverlayBounds(scan.SelectedHorizontalTab.Bounds, scan.Dpi, configuredSize, configuredInset);
+                Assert.IsFalse(configured.IsEmpty, "the configured button must fit the real tab");
+                Assert.IsTrue(configured.Width == TabGeometry.OverlaySize(scan.Dpi, configuredSize), "configured width follows the DPI-scaled size");
+                TabInfo inactive = FirstInactive(scan);
+                Assert.IsTrue(inactive != null, "the fixture needs at least one inactive tab");
+
+                Rectangle window = NativeMethods.GetWindowBounds(brave);
+                Point page = new Point(window.Left + window.Width / 2, window.Top + window.Height - 60);
+                SetCursorPos(page.X, page.Y);
+
+                app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
+                SetForegroundWindow(brave);
+                Thread.Sleep(2500);
+                Assert.IsTrue(FindVisibleWindow(app.Id, true) == IntPtr.Zero,
+                    "hover mode must not show the button while the pointer is outside the selected tab");
+
+                CursorTo(scan.SelectedHorizontalTab.Bounds);
+                IntPtr overlay = IntPtr.Zero;
+                try
+                {
+                    Wait(delegate
+                    {
+                        overlay = FindVisibleWindow(app.Id, true);
+                        return overlay != IntPtr.Zero && NativeMethods.GetWindowBounds(overlay) == configured;
+                    }, 8000, "hover did not show the configured button");
+                }
+                catch (AssertionFailure)
+                {
+                    throw new AssertionFailure("Hover show: " + DescribeHover(app.Id, brave, configured));
+                }
+                Console.WriteLine("PASS hover mode shows the configured " + configured.Width + "x" + configured.Height + " px button over the selected tab");
+
+                CursorTo(configured);
+                Thread.Sleep(700);
+                Assert.IsTrue(FindVisibleWindow(app.Id, true) != IntPtr.Zero, "moving from the tab onto the button must keep it visible");
+                Console.WriteLine("PASS moving the pointer from the tab onto the button keeps it visible");
+
+                CursorTo(inactive.Bounds);
+                Wait(delegate { return FindVisibleWindow(app.Id, true) == IntPtr.Zero; }, 5000,
+                    "an inactive tab must not satisfy the hover rule");
+                Console.WriteLine("PASS an inactive tab and the title bar never satisfy the hover rule");
+
+                CursorTo(scan.SelectedHorizontalTab.Bounds);
+                Wait(delegate { overlay = FindVisibleWindow(app.Id, true); return overlay != IntPtr.Zero; }, 8000, "hover did not re-show the button");
+                Rectangle shown = NativeMethods.GetWindowBounds(overlay);
+                Assert.AreEqual(configured, shown, "the hover-shown button uses the configured geometry");
+                Click(overlay);
+                Wait(delegate { return UiaTabScanner.Scan(brave, configuredSize, configuredInset).Tabs.Count == 2; }, 8000,
+                    "a click on a hover-shown button must still close exactly one tab");
+                Console.WriteLine("PASS hover click closes exactly one tab through the unchanged validation path");
+
+                // Restart the application while Brave stays open: the persisted settings must be applied again.
+                Kill(app);
+                Thread.Sleep(500);
+                app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
+                SetForegroundWindow(brave);
+                ScanResult restarted = null;
+                Wait(delegate
+                {
+                    restarted = UiaTabScanner.Scan(brave, configuredSize, configuredInset);
+                    return restarted.Outcome == ScanOutcome.Ready && restarted.Tabs.Count == 2;
+                }, 20000, "post-restart scan did not confirm the two remaining tabs");
+                Rectangle afterRestart = TabGeometry.GetOverlayBounds(restarted.SelectedHorizontalTab.Bounds, restarted.Dpi, configuredSize, configuredInset);
+                CursorTo(restarted.SelectedHorizontalTab.Bounds);
+                Wait(delegate
+                {
+                    IntPtr window = FindVisibleWindow(app.Id, true);
+                    return window != IntPtr.Zero && NativeMethods.GetWindowBounds(window) == afterRestart;
+                }, 8000, "restarted application did not apply the persisted hover mode and size");
+                Console.WriteLine("PASS persisted hover mode and " + configuredSize + " px size survive a restart with Brave still open");
+
+                // A corrupted settings file must fall back to the documented defaults instead of failing to start.
+                Kill(app);
+                Thread.Sleep(500);
+                File.WriteAllText(settingsPath, "overlayEnabled=maybe\r\nvisibilityMode=sideways\r\nbuttonSize=not-a-number\r\nhoverGraceMs=999999\r\n");
+                app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
+                SetForegroundWindow(brave);
+                ScanResult fallback = null;
+                Wait(delegate
+                {
+                    fallback = UiaTabScanner.Scan(brave, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
+                    return fallback.Outcome == ScanOutcome.Ready;
+                }, 20000, "fallback scan did not confirm a tab");
+                Rectangle defaultGeometry = TabGeometry.GetOverlayBounds(fallback.SelectedHorizontalTab.Bounds, fallback.Dpi,
+                    AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
+                // Defaults are always-show, so the button must appear with the pointer parked away from the tab strip.
+                SetCursorPos(page.X, page.Y);
+                Wait(delegate
+                {
+                    IntPtr window = FindVisibleWindow(app.Id, true);
+                    return window != IntPtr.Zero && NativeMethods.GetWindowBounds(window) == defaultGeometry;
+                }, 8000, "a corrupted settings file did not fall back to always-show with the default size");
+                Console.WriteLine("PASS a corrupted settings file falls back to documented defaults (always-show, " + AppInfo.DefaultButtonSizeLogical + " px)");
+            }
+            finally
+            {
+                Kill(app);
+                Kill(browser);
+                try
+                {
+                    if (original == null) File.Delete(settingsPath);
+                    else File.WriteAllText(settingsPath, original);
+                }
+                catch (IOException)
+                {
+                }
+                catch (UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+
+        private static void CursorTo(Rectangle bounds)
+        {
+            SetCursorPos(bounds.Left + bounds.Width / 2, bounds.Top + bounds.Height / 2);
+        }
+
+        private static TabInfo FirstInactive(ScanResult scan)
+        {
+            foreach (TabInfo tab in scan.Tabs)
+            {
+                if (tab != scan.SelectedHorizontalTab && tab.IsHorizontalCandidate && !tab.IsOffscreen) return tab;
+            }
+            return null;
+        }
+
+        private static string DescribeHover(int appId, IntPtr brave, Rectangle expected)
+        {
+            IntPtr overlay = FindVisibleWindow(appId, true);
+            return "expected=" + expected + "; overlay=" + overlay.ToInt64()
+                + "; overlayVisible=" + (overlay != IntPtr.Zero && NativeMethods.IsWindowVisible(overlay))
+                + "; overlayBounds=" + (overlay == IntPtr.Zero ? "none" : NativeMethods.GetWindowBounds(overlay).ToString())
+                + "; foregroundIsBrave=" + (NativeMethods.GetForegroundRootWindow() == brave)
+                + "; cursor=" + System.Windows.Forms.Cursor.Position;
+        }
+
+        private static void Kill(Process process)
+        {
+            if (process == null) return;
+            try
+            {
+                if (!process.HasExited) { process.Kill(); process.WaitForExit(5000); }
+            }
+            catch (InvalidOperationException)
+            {
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+            }
+            finally
+            {
+                process.Dispose();
             }
         }
 
@@ -229,10 +426,10 @@ namespace Xtension.Tests
         {
             Wait(delegate
             {
-                ScanResult scan = UiaTabScanner.Scan(window);
+                ScanResult scan = UiaTabScanner.Scan(window, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
                 IntPtr overlay = FindVisibleWindow(appId, true);
                 return NativeMethods.GetForegroundRootWindow() == window && scan.Outcome == ScanOutcome.Ready
-                    && overlay != IntPtr.Zero && NativeMethods.GetWindowBounds(overlay) == TabGeometry.GetOverlayBounds(scan.SelectedHorizontalTab.Bounds, scan.Dpi);
+                    && overlay != IntPtr.Zero && NativeMethods.GetWindowBounds(overlay) == TabGeometry.GetOverlayBounds(scan.SelectedHorizontalTab.Bounds, scan.Dpi, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
             }, milliseconds, "foreground overlay did not match current scan");
         }
 

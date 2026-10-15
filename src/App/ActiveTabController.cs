@@ -11,6 +11,7 @@ namespace Xtension
         public bool OverlayVisible;
         public bool BraveInForeground;
         public bool Stalled;
+        public OverlayVisibilityMode VisibilityMode;
         public string IdleReason = string.Empty;
         public string Notice = string.Empty;
         public string HiddenReason = string.Empty;
@@ -22,11 +23,19 @@ namespace Xtension
     /// Owns the overlay state machine. All state is touched only on the UI thread. UI Automation runs on two worker
     /// threads: one for periodic overlay scans and one for close validation, so a × click never waits behind a scan.
     ///
-    /// Safety model:
+    /// Safety model (unchanged by dev3):
     /// - The overlay is shown only after a Ready scan of the current foreground Brave window.
     /// - Every state change bumps an epoch. Results from an older epoch are discarded.
     /// - A click sends Ctrl+W only if a fresh scan confirms the click landed on the × of the one selected horizontal tab.
     /// - After a keystroke, the overlay is hidden and clicks are ignored for CloseCooldownMs.
+    ///
+    /// dev3 additions:
+    /// - Visibility mode (always when safe, or only while the pointer is over the confirmed selected tab).
+    /// - Configurable × size and inset, applied to painting, placement, hit testing and close validation together.
+    /// - Change-gated view notification: a timer tick that changes nothing observable no longer rebuilds a snapshot
+    ///   or re-renders the windows.
+    /// - Hover mode skips UI Automation work while the pointer cannot be inside the horizontal tab strip. That can
+    ///   only delay showing the button; it never authorizes anything.
     /// </summary>
     internal sealed class ActiveTabController : IDisposable
     {
@@ -34,6 +43,8 @@ namespace Xtension
         private readonly Control _invoker;
         private readonly ScanWorker _overlayWorker;
         private readonly ScanWorker _closeWorker;
+        private readonly HoverTracker _hover = new HoverTracker();
+        private readonly AppSettings _settings;
 
         private volatile bool _disposed;
         private bool _enabled;
@@ -46,8 +57,8 @@ namespace Xtension
         private IntPtr _foreground = IntPtr.Zero;
         private IntPtr _targetWindow = IntPtr.Zero;
         private IntPtr _lastBraveWindow = IntPtr.Zero;
-        private string _idleReason = "Đang khởi động. Mở Brave để nhận diện tab đang chọn.";
-        private string _notice = string.Empty;
+        private StringId _idleReason = StringId.IdleStarting;
+        private StringId _notice = StringId.None;
         private ScanResult _latest;
         private ScanOutcome _loggedOutcome = ScanOutcome.Idle;
         private string _loggedError;
@@ -57,8 +68,21 @@ namespace Xtension
         private long _lastSentMs = Clock.Never;
         private bool _closeInFlight;
         private long _closeRequestId;
-        private string _overlayFailure = string.Empty;
         private long _closeStartedMs = Clock.Never;
+        private string _overlayFailure = string.Empty;
+        private Rectangle _hoverRegion = Rectangle.Empty;
+
+        // Last state that was pushed to the views, so an uneventful tick costs nothing.
+        private IntPtr _notifiedForeground = new IntPtr(-1);
+        private bool _notifiedBrave;
+        private bool _notifiedStalled;
+        private bool _notifiedEnabled;
+        private bool _notifiedCloseInFlight;
+        private bool _notifiedVisible;
+        private StringId _notifiedIdle = (StringId)(-1);
+        private StringId _notifiedNotice = (StringId)(-1);
+        private string _notifiedOverlayFailure;
+        private ScanResult _notifiedLatest;
 
         /// <summary>Raised on the UI thread whenever something visible may have changed.</summary>
         public event EventHandler Changed;
@@ -66,17 +90,31 @@ namespace Xtension
         /// <summary>Raised on the UI thread when a close keystroke could not be delivered.</summary>
         public event Action<string> CloseFailed;
 
-        public ActiveTabController(CloseButtonOverlay overlay, Control invoker, bool enabled)
+        public ActiveTabController(CloseButtonOverlay overlay, Control invoker, AppSettings settings)
         {
             _overlay = overlay;
             _invoker = invoker;
-            _enabled = enabled;
-            _overlayWorker = new ScanWorker("Xtension UIA overlay scan", Post);
-            _closeWorker = new ScanWorker("Xtension UIA close validation", Post);
+            _settings = settings == null ? AppSettings.Defaults() : settings;
+            _settings.Normalize();
+            _enabled = _settings.OverlayEnabled;
+            _overlayWorker = new ScanWorker("Xtension UIA overlay scan", Post, ScanOverlay);
+            _closeWorker = new ScanWorker("Xtension UIA close validation", Post, ScanOverlay);
             _overlay.Clicked += OnOverlayClicked;
         }
 
-        /// <summary>Called by the UI timer every ForegroundPollMs. Cheap when Brave is not in front.</summary>
+        /// <summary>Scan delegate that carries the configured × geometry into every scan decision.</summary>
+        private ScanResult ScanOverlay(IntPtr window)
+        {
+            return UiaTabScanner.Scan(window, _settings.ButtonSizeLogical, _settings.ButtonInsetLogical);
+        }
+
+        /// <summary>Current effective settings copy. Callers must go through the Set* methods to apply changes.</summary>
+        public AppSettings Settings
+        {
+            get { return _settings; }
+        }
+
+        /// <summary>Called by the UI timer. Cheap when Brave is not in front.</summary>
         public void Tick()
         {
             if (_disposed) return;
@@ -86,19 +124,26 @@ namespace Xtension
             if (foreground != _foreground)
             {
                 _foreground = foreground;
+                _hover.Reset();
                 InvalidateConfirmation();
             }
 
             if (_closeInFlight && Clock.HasElapsed(_closeStartedMs, AppInfo.CloseValidationTimeoutMs))
             {
-                _notice = "Xác nhận nhấp đã hết hạn. Không tab nào bị đóng.";
+                _notice = StringId.NoticeValidationExpired;
                 _closeInFlight = false;
                 InvalidateConfirmation();
             }
+
             bool isBrave = ProcessIdentity.IsBraveWindow(foreground);
-            bool minimized = foreground != IntPtr.Zero && NativeMethods.IsIconic(foreground);
+            // The minimized wording is only correct when the minimized window really is Brave (dev2 follow-up).
+            bool minimized = isBrave && foreground != IntPtr.Zero && NativeMethods.IsIconic(foreground);
             bool available = isBrave && !minimized;
-            if (_braveInForeground != available) InvalidateConfirmation();
+            if (_braveInForeground != available)
+            {
+                _hover.Reset();
+                InvalidateConfirmation();
+            }
             _braveInForeground = available;
             if (isBrave) _lastBraveWindow = foreground;
 
@@ -106,8 +151,9 @@ namespace Xtension
             {
                 HideOverlay();
                 _targetWindow = IntPtr.Zero;
+                ClearHoverRegion();
                 CheckStall();
-                NotifyChanged();
+                NotifyIfChanged();
                 return;
             }
 
@@ -115,29 +161,85 @@ namespace Xtension
             {
                 HideOverlay();
                 _targetWindow = IntPtr.Zero;
-                _idleReason = minimized
-                    ? "Cửa sổ Brave đang thu nhỏ. Khôi phục Brave để hiện nút ×."
-                    : "Brave chưa ở phía trước. Chuyển sang Brave để hiện nút ×; mở bảng điều khiển để xem trạng thái gần nhất.";
+                ClearHoverRegion();
+                _hover.Reset();
+                _idleReason = minimized ? StringId.IdleBraveMinimized : StringId.IdleBraveNotForeground;
                 RequestDashboardScanIfVisible(now);
                 CheckStall();
-                NotifyChanged();
+                NotifyIfChanged();
                 return;
             }
 
             _targetWindow = foreground;
-            _idleReason = string.Empty;
+            _idleReason = StringId.None;
 
             // Hide when the confirmation is older than the stale window (for example, a stalled UIA call).
-            if (_overlay.Visible && Clock.HasElapsed(_lastConfirmedMs, AppInfo.ScanStaleMs)) HideOverlay();
+            if (_overlay.Visible && Clock.HasElapsed(_lastConfirmedMs, AppInfo.ScanStaleMs))
+            {
+                HideOverlay();
+                _hover.Reset();
+            }
 
-            if (!_closeInFlight && !_overlayWorker.IsBusy && Clock.HasElapsed(_lastOverlayRequestMs, AppInfo.ScanIntervalMs))
+            if (!_closeInFlight && !_overlayWorker.IsBusy && Clock.HasElapsed(_lastOverlayRequestMs, _settings.ScanIntervalMs)
+                && ShouldScanNow(foreground))
             {
                 _lastOverlayRequestMs = now;
                 Submit(_overlayWorker, ScanKind.Overlay, foreground, Point.Empty);
             }
 
+            if (_settings.VisibilityMode == OverlayVisibilityMode.HoverOnSelectedTab) UpdateHoverVisibility(now);
+
             CheckStall();
-            NotifyChanged();
+            NotifyIfChanged();
+        }
+
+        /// <summary>
+        /// Hover mode only: in always mode every tick scans, as before. In hover mode the pointer must be inside the
+        /// window's tab strip (or the button must already be visible) before a scan is worth submitting. A pointer
+        /// outside the strip cannot satisfy any eligibility rule, so this can only delay the button by one scan
+        /// interval and can never authorize a close.
+        /// </summary>
+        private bool ShouldScanNow(IntPtr window)
+        {
+            if (_settings.VisibilityMode != OverlayVisibilityMode.HoverOnSelectedTab) return true;
+            if (_overlay.Visible) return true;
+            Rectangle windowBounds = NativeMethods.GetWindowBounds(window);
+            if (windowBounds.IsEmpty) return true;
+            Point pointer;
+            if (!NativeMethods.TryGetPointerPosition(out pointer)) return true;
+            Rectangle strip = TabGeometry.GetTabStripRegion(windowBounds, NativeMethods.GetWindowDpi(window));
+            if (strip.IsEmpty) return true;
+            return strip.Contains(pointer);
+        }
+
+        /// <summary>
+        /// Hover mode decision. Eligibility mirrors the always-show rules exactly; the pointer position only decides
+        /// whether the × is displayed right now, and the bounded grace period keeps it stable while the pointer moves
+        /// from the tab onto the button.
+        /// </summary>
+        private void UpdateHoverVisibility(long now)
+        {
+            ScanResult result = _latest;
+            bool eligible = _enabled
+                && _braveInForeground
+                && !_stalled
+                && !_closeInFlight
+                && Clock.HasElapsed(_lastSentMs, AppInfo.CloseCooldownMs)
+                && !Clock.HasElapsed(_lastConfirmedMs, AppInfo.ScanStaleMs)
+                && result != null
+                && result.Outcome == ScanOutcome.Ready
+                && result.SelectedHorizontalTab != null;
+
+            Point pointer;
+            bool hasPointer = NativeMethods.TryGetPointerPosition(out pointer);
+            bool inside = hasPointer && HoverRegion.Contains(_hoverRegion, pointer);
+
+            if (_hover.Update(eligible, inside, now, _settings.HoverGraceMs))
+            {
+                if (result != null) ShowOverlayFor(result);
+                return;
+            }
+            if (_overlay.Visible) HideOverlay();
         }
 
         public void SetEnabled(bool enabled)
@@ -145,11 +247,66 @@ namespace Xtension
             if (_enabled == enabled) return;
             _enabled = enabled;
             _closeInFlight = false;
-            _notice = string.Empty;
+            _notice = StringId.None;
             InvalidateConfirmation();
             if (!enabled) _latest = null;
             AppLog.Info(enabled ? "Overlay enabled by user." : "Overlay disabled by user.");
-            NotifyChanged();
+            ForceNotify();
+        }
+
+        public void SetVisibilityMode(OverlayVisibilityMode mode)
+        {
+            if (mode != OverlayVisibilityMode.HoverOnSelectedTab) mode = OverlayVisibilityMode.AlwaysWhenSafe;
+            if (_settings.VisibilityMode == mode) return;
+            _settings.VisibilityMode = mode;
+            _notice = StringId.None;
+            InvalidateConfirmation();
+            AppLog.Info("Visibility mode set to " + AppSettings.VisibilityToken(mode) + ".");
+            ForceNotify();
+        }
+
+        /// <summary>
+        /// Applies a new × size and inset. In-flight close validations are discarded, because the click area that was
+        /// validated no longer matches the button on screen.
+        /// </summary>
+        public void SetButtonGeometry(int sizeLogical, int insetLogical)
+        {
+            int size = TabGeometry.ClampButtonSize(sizeLogical);
+            int inset = TabGeometry.ClampButtonInset(insetLogical);
+            if (_settings.ButtonSizeLogical == size && _settings.ButtonInsetLogical == inset) return;
+            _settings.ButtonSizeLogical = size;
+            _settings.ButtonInsetLogical = inset;
+            InvalidateConfirmation();
+            ForceNotify();
+        }
+
+        public void SetHoverGraceMs(int milliseconds)
+        {
+            if (milliseconds < AppInfo.MinHoverGraceMs) milliseconds = AppInfo.MinHoverGraceMs;
+            if (milliseconds > AppInfo.MaxHoverGraceMs) milliseconds = AppInfo.MaxHoverGraceMs;
+            _settings.HoverGraceMs = milliseconds;
+        }
+
+        public void SetScanIntervalMs(int milliseconds)
+        {
+            if (milliseconds < AppInfo.MinScanIntervalMs) milliseconds = AppInfo.MinScanIntervalMs;
+            if (milliseconds > AppInfo.MaxScanIntervalMs) milliseconds = AppInfo.MaxScanIntervalMs;
+            _settings.ScanIntervalMs = milliseconds;
+        }
+
+        /// <summary>
+        /// Pushes the whole settings set into the controller. Every changed value is applied immediately, and a
+        /// geometry or mode change invalidates any pending validation.
+        /// </summary>
+        public void ApplySettings(AppSettings settings)
+        {
+            if (settings == null) return;
+            settings.Normalize();
+            SetHoverGraceMs(settings.HoverGraceMs);
+            SetScanIntervalMs(settings.ScanIntervalMs);
+            SetButtonGeometry(settings.ButtonSizeLogical, settings.ButtonInsetLogical);
+            SetVisibilityMode(settings.VisibilityMode);
+            SetEnabled(settings.OverlayEnabled);
         }
 
         public void SetDashboardVisible(bool visible)
@@ -164,25 +321,33 @@ namespace Xtension
             snapshot.OverlayVisible = _overlay.Visible;
             snapshot.BraveInForeground = _braveInForeground;
             snapshot.Stalled = _stalled;
-            snapshot.IdleReason = _idleReason;
-            snapshot.Notice = _notice;
+            snapshot.VisibilityMode = _settings.VisibilityMode;
+            snapshot.IdleReason = GetIdleReason();
+            snapshot.Notice = Strings.Get(_notice);
             snapshot.Scan = _latest;
             snapshot.HiddenReason = GetHiddenReason();
             return snapshot;
         }
 
+        private string GetIdleReason()
+        {
+            return _idleReason == StringId.None ? string.Empty : Strings.Get(_idleReason);
+        }
+
         private string GetHiddenReason()
         {
             if (_overlay.Visible) return string.Empty;
-            if (!_enabled) return "Nút × đang tắt.";
-            if (_stalled) return "UI Automation chưa phản hồi; nút × bị ẩn. Không có lệnh đóng tab.";
-            if (!_braveInForeground) return _idleReason;
-            if (_closeInFlight) return "Đang xác nhận lần nhấp; nút × tạm ẩn.";
-            if (!Clock.HasElapsed(_lastSentMs, AppInfo.CloseCooldownMs)) return "Đang chờ sau lệnh đóng tab để tránh đóng liên tiếp.";
-            if (!string.IsNullOrEmpty(_overlayFailure)) return _overlayFailure;
-            if (_latest == null) return "Đang chờ quét cho trạng thái cửa sổ hiện tại.";
+            if (!_enabled) return Strings.Get(StringId.HiddenOverlayDisabled);
+            if (_stalled) return Strings.Get(StringId.HiddenStalled);
+            if (!_braveInForeground) return GetIdleReason();
+            if (_closeInFlight) return Strings.Get(StringId.HiddenCloseInFlight);
+            if (!Clock.HasElapsed(_lastSentMs, AppInfo.CloseCooldownMs)) return Strings.Get(StringId.HiddenCooldown);
+            if (!string.IsNullOrEmpty(_overlayFailure)) return Strings.Get(StringId.OverlayShowFailed, _overlayFailure);
+            if (_settings.VisibilityMode == OverlayVisibilityMode.HoverOnSelectedTab && !_hover.Visible
+                && (_hoverRegion.IsEmpty || !_hover.PointerInside)) return Strings.Get(StringId.HiddenHoverOutside);
+            if (_latest == null) return Strings.Get(StringId.HiddenWaitingScan);
             if (_latest.Outcome != ScanOutcome.Ready) return _latest.Message;
-            return "Kết quả xác nhận đã cũ hoặc cửa sổ đã thay đổi; đang chờ quét mới.";
+            return Strings.Get(StringId.HiddenStaleConfirmation);
         }
 
         private void RequestDashboardScanIfVisible(long now)
@@ -226,7 +391,7 @@ namespace Xtension
                 // Preserve diagnostics, never authorization, even when a slow provider finally returns an error.
                 _latest = completion.Result;
                 LogOutcomeIfChanged(completion.Result);
-                NotifyChanged();
+                ForceNotify();
                 return;
             }
 
@@ -234,7 +399,7 @@ namespace Xtension
             {
                 _latest = completion.Result;
                 LogOutcomeIfChanged(completion.Result);
-                NotifyChanged();
+                ForceNotify();
                 return;
             }
 
@@ -243,7 +408,7 @@ namespace Xtension
                 || !ProcessIdentity.IsBraveWindow(request.Window))
             {
                 InvalidateConfirmation();
-                NotifyChanged();
+                ForceNotify();
                 return;
             }
 
@@ -260,21 +425,31 @@ namespace Xtension
                 else
                 {
                     _lastConfirmedMs = request.StartedMs;
-                    ShowOverlayFor(result);
+                    UpdateHoverRegion(result);
+                    // In hover mode showing is the pointer's decision; in always mode the confirmed scan shows it.
+                    if (_settings.VisibilityMode == OverlayVisibilityMode.AlwaysWhenSafe) ShowOverlayFor(result);
+                    else UpdateHoverVisibility(Clock.NowMs);
                 }
             }
             else
             {
                 HideOverlay();
+                ClearHoverRegion();
             }
 
             LogOutcomeIfChanged(result);
-            NotifyChanged();
+            ForceNotify();
         }
 
         private void ShowOverlayFor(ScanResult result)
         {
-            Rectangle target = TabGeometry.GetOverlayBounds(result.SelectedHorizontalTab.Bounds, result.Dpi);
+            if (result == null || result.SelectedHorizontalTab == null)
+            {
+                HideOverlay();
+                return;
+            }
+            Rectangle target = TabGeometry.GetOverlayBounds(result.SelectedHorizontalTab.Bounds, result.Dpi,
+                _settings.ButtonSizeLogical, _settings.ButtonInsetLogical);
             if (target.IsEmpty)
             {
                 HideOverlay();
@@ -283,10 +458,34 @@ namespace Xtension
             string failure;
             if (!_overlay.ShowAt(target, out failure))
             {
-                _overlayFailure = "Không hiện được nút ×: " + failure;
+                _overlayFailure = failure;
                 AppLog.WarnThrottled("overlay-show", failure);
             }
             else _overlayFailure = string.Empty;
+        }
+
+        /// <summary>
+        /// Recomputes the hover region from a confirmed scan. A geometry change clears hover state, so a hover that
+        /// belonged to the previous tab, window position or button size cannot keep the button alive.
+        /// </summary>
+        private void UpdateHoverRegion(ScanResult result)
+        {
+            Rectangle tab = result.SelectedHorizontalTab == null ? Rectangle.Empty : result.SelectedHorizontalTab.Bounds;
+            Rectangle overlayBounds = tab.IsEmpty
+                ? Rectangle.Empty
+                : TabGeometry.GetOverlayBounds(tab, result.Dpi, _settings.ButtonSizeLogical, _settings.ButtonInsetLogical);
+            Rectangle region = HoverRegion.ForSelectedTab(tab, overlayBounds);
+            if (region != _hoverRegion)
+            {
+                _hoverRegion = region;
+                _hover.Reset();
+            }
+        }
+
+        private void ClearHoverRegion()
+        {
+            if (!_hoverRegion.IsEmpty) _hoverRegion = Rectangle.Empty;
+            _hover.Reset();
         }
 
         private void OnOverlayClicked(Point screenPoint)
@@ -295,6 +494,7 @@ namespace Xtension
 
             // Hide first: the button must not stay clickable while its validation is pending.
             HideOverlay();
+            _hover.Reset();
             if (_closeInFlight) return;
 
             if (!Clock.HasElapsed(_lastSentMs, AppInfo.CloseCooldownMs))
@@ -307,8 +507,8 @@ namespace Xtension
             if (foreground == IntPtr.Zero || foreground != _targetWindow || !ProcessIdentity.IsBraveWindow(foreground))
             {
                 AppLog.Info("Click ignored: Brave is no longer the foreground window.");
-                _notice = "Brave không còn ở phía trước. Không tab nào bị đóng.";
-                NotifyChanged();
+                _notice = StringId.NoticeBraveNotForeground;
+                ForceNotify();
                 return;
             }
 
@@ -317,15 +517,15 @@ namespace Xtension
             if (!_closeWorker.TrySubmit(request))
             {
                 AppLog.Warn("Close validation lane was busy; the click was ignored.");
-                _notice = "UI Automation còn đang xử lý lần xác nhận trước. Lần nhấp này đã bị bỏ qua.";
-                NotifyChanged();
+                _notice = StringId.NoticeCloseLaneBusy;
+                ForceNotify();
                 return;
             }
             _closeRequestId = request.Id;
             _closeInFlight = true;
             _closeStartedMs = Clock.NowMs;
-            _notice = "Đang xác nhận tab đang chọn…";
-            NotifyChanged();
+            _notice = StringId.NoticeValidating;
+            ForceNotify();
         }
 
         private void OnCloseValidated(ScanCompletion completion)
@@ -338,8 +538,8 @@ namespace Xtension
             if (request.Epoch != _epoch)
             {
                 AppLog.Info("Close click cancelled: window state changed during validation.");
-                _notice = "Trạng thái cửa sổ đã thay đổi. Không tab nào bị đóng.";
-                NotifyChanged();
+                _notice = StringId.NoticeEpochChanged;
+                ForceNotify();
                 return;
             }
 
@@ -357,6 +557,8 @@ namespace Xtension
             check.NowMs = Clock.NowMs;
             check.StartedMs = request.StartedMs;
             check.LastSentMs = _lastSentMs;
+            check.OverlaySizeLogical = _settings.ButtonSizeLogical;
+            check.OverlayInsetLogical = _settings.ButtonInsetLogical;
 
             if (scan.WindowBounds != NativeMethods.GetWindowBounds(request.Window)
                 || scan.Dpi != NativeMethods.GetWindowDpi(request.Window)) check.EpochCurrent = false;
@@ -364,9 +566,9 @@ namespace Xtension
             if (!decision.Allowed)
             {
                 AppLog.Info("Close click ignored: " + decision.Reason + " (scan outcome " + scan.Outcome + ").");
-                _notice = "Lần nhấp × bị bỏ qua vì chưa xác nhận chắc chắn tab đang chọn. Không tab nào bị đóng.";
+                _notice = StringId.NoticeClickRejected;
                 _latest = scan;
-                NotifyChanged();
+                ForceNotify();
                 return;
             }
 
@@ -376,8 +578,8 @@ namespace Xtension
                 || !ScanSafety.IsFresh(request.StartedMs, Clock.NowMs, AppInfo.CloseValidationTimeoutMs))
             {
                 InvalidateConfirmation();
-                _notice = "Cửa sổ hoặc phím bổ trợ đã thay đổi. Không tab nào bị đóng.";
-                NotifyChanged();
+                _notice = StringId.NoticeWindowOrModifierChanged;
+                ForceNotify();
                 return;
             }
             bool sent = KeyboardInjector.SendControlW(out failure);
@@ -388,28 +590,29 @@ namespace Xtension
             if (sent)
             {
                 AppLog.Info("Ctrl+W sent to the confirmed active tab; close cooldown started.");
-                _notice = "Đã gửi lệnh đóng tab đang chọn.";
+                _notice = StringId.NoticeClosed;
             }
             else
             {
                 AppLog.Error("Ctrl+W was not delivered: " + failure);
-                _notice = "Không gửi được lệnh đóng tab. Mở Chẩn đoán để xem chi tiết.";
+                _notice = StringId.NoticeCloseFailed;
                 Action<string> failed = CloseFailed;
-                if (failed != null) failed(_notice);
+                if (failed != null) failed(Strings.Get(_notice));
             }
-            NotifyChanged();
+            ForceNotify();
         }
 
         /// <summary>Any event that makes pending results or the visible overlay untrustworthy. Hides the overlay.</summary>
         private void InvalidateConfirmation()
         {
             _epoch++;
-            if (_closeInFlight) _notice = "Xác nhận đã bị hủy vì trạng thái thay đổi. Không tab nào bị đóng.";
+            if (_closeInFlight) _notice = StringId.NoticeValidationCancelled;
             _closeInFlight = false;
             _closeRequestId = 0;
             _latest = null;
             _overlayFailure = string.Empty;
             _lastConfirmedMs = Clock.Never;
+            ClearHoverRegion();
             HideOverlay();
         }
 
@@ -425,6 +628,7 @@ namespace Xtension
             if (_stalled)
             {
                 HideOverlay();
+                _hover.Reset();
                 if (!_stallLogged)
                 {
                     _stallLogged = true;
@@ -444,7 +648,53 @@ namespace Xtension
             _loggedError = result.Error;
             _loggedOutcome = result.Outcome;
             string detail = result.Error == null ? string.Empty : " error=" + result.Error;
-            AppLog.Info("Overlay state: " + result.Outcome + " (tabs=" + result.Tabs.Count + ", nodes=" + result.NodesVisited + ", ms=" + result.ElapsedMs + ")" + detail + ".");
+            // Counts, timings and outcome only: never a tab title, a window title or a URL.
+            AppLog.Info("Overlay state: " + result.Outcome + " (key=" + result.Key + ", tabs=" + result.Tabs.Count
+                + ", nodes=" + result.NodesVisited + ", ms=" + result.ElapsedMs + ")" + detail + ".");
+        }
+
+        /// <summary>True when the observable state differs from the state that was last pushed to the views.</summary>
+        private bool HasUnnotifiedChange()
+        {
+            return _notifiedForeground != _foreground
+                || _notifiedBrave != _braveInForeground
+                || _notifiedStalled != _stalled
+                || _notifiedEnabled != _enabled
+                || _notifiedCloseInFlight != _closeInFlight
+                || _notifiedVisible != _overlay.Visible
+                || _notifiedIdle != _idleReason
+                || _notifiedNotice != _notice
+                || !object.ReferenceEquals(_notifiedLatest, _latest)
+                || !string.Equals(_notifiedOverlayFailure, _overlayFailure, StringComparison.Ordinal);
+        }
+
+        private void RememberNotifiedState()
+        {
+            _notifiedForeground = _foreground;
+            _notifiedBrave = _braveInForeground;
+            _notifiedStalled = _stalled;
+            _notifiedEnabled = _enabled;
+            _notifiedCloseInFlight = _closeInFlight;
+            _notifiedVisible = _overlay.Visible;
+            _notifiedIdle = _idleReason;
+            _notifiedNotice = _notice;
+            _notifiedLatest = _latest;
+            _notifiedOverlayFailure = _overlayFailure;
+        }
+
+        /// <summary>Pushes the current state to the views, but only when something observable changed.</summary>
+        private void NotifyIfChanged()
+        {
+            if (!HasUnnotifiedChange()) return;
+            RememberNotifiedState();
+            NotifyChanged();
+        }
+
+        /// <summary>Notifies the views unconditionally. Used after a language change or a settings change.</summary>
+        public void ForceNotify()
+        {
+            RememberNotifiedState();
+            NotifyChanged();
         }
 
         private void NotifyChanged()

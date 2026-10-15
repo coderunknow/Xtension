@@ -2,7 +2,7 @@
 
 Xtension is a small Windows tray app for Brave. It shows one custom **×** on the selected horizontal tab, so you do not close a tab by accident. The × moves when you change tabs. It appears only when Xtension can confirm which tab is active.
 
-> **Status: prerelease `v0.1.0-dev2`.** The UIA cache failure is corrected and Windows CI includes real-Brave smoke tests with both EXEs. This is not a guarantee across all Brave versions or desktop configurations. See [Verification](#verification) and the Releases page for publication state.
+> **Status: prerelease `v0.1.0-dev3`.** This candidate adds a settings window, a hover visibility mode, a configurable × size, a Vietnamese/English language toggle and measured resource work. Windows CI runs static checks, core tests, synthetic Windows tests, real-Brave smoke with both EXEs, packaging checks and a published-baseline resource comparison. This is not a guarantee across all Brave versions or desktop configurations. See [Verification](#verification) and the Releases page for publication state.
 
 ## Requirements
 
@@ -13,10 +13,10 @@ Xtension is a small Windows tray app for Brave. It shows one custom **×** on th
 
 ## Install
 
-Download `Xtension-v0.1.0-dev2-win-x64.exe` (or `-win-x86.exe` for 32-bit Windows) from the [Releases](https://github.com/coderunknow/Xtension/releases) page. Check it against `SHA256SUMS.txt`:
+Download `Xtension-v0.1.0-dev3-win-x64.exe` (or `-win-x86.exe` for 32-bit Windows) from the [Releases](https://github.com/coderunknow/Xtension/releases) page. Check it against `SHA256SUMS.txt`:
 
 ```powershell
-Get-FileHash .\Xtension-v0.1.0-dev2-win-x64.exe -Algorithm SHA256
+Get-FileHash .\Xtension-v0.1.0-dev3-win-x64.exe -Algorithm SHA256
 ```
 
 Run it. A tray icon appears. Open the dashboard from the tray menu.
@@ -24,10 +24,29 @@ Run it. A tray icon appears. Open the dashboard from the tray menu.
 ## Use
 
 - The dashboard shows whether the × is active, the tab Xtension has confirmed, and the reason if the × is hidden.
+- **Settings** opens the Xtension settings window (also in the tray menu). It contains every option below.
 - **Turn off the ×** from the tray menu or dashboard. This only hides the ×.
 - **Exit** from the tray menu. This closes Xtension.
-- **Start with Windows** is off by default. Turn it on from the tray menu or dashboard.
+- **Start with Windows** is off by default. Turn it on from the tray menu, dashboard or settings window.
 - Diagnostics (tray menu → *Chẩn đoán*) lists the tabs from the last scan.
+
+### Settings
+
+Every option is also available from the tray menu, and every change applies immediately to the running app.
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| Show the × | on / off | on |
+| Visibility mode | `always` – show whenever the active tab is confirmed; `hover` – show only while the pointer is over the confirmed selected tab (or on the button) | `always` |
+| × size | 18–40 logical pixels | 26 |
+| Right inset | 0–12 logical pixels from the tab's right edge | 3 |
+| Hover keep-time | 0–1000 ms after the pointer leaves the tab, so the pointer can travel from tab to button | 250 ms |
+| Scan interval | 300–2000 ms between UI Automation scans while Brave is in front | 500 ms |
+| Interface language | Tiếng Việt / English | Tiếng Việt |
+
+Out-of-range or unreadable values are replaced by the documented default rather than being trusted. **Reset to defaults** restores every value above (the start-with-Windows entry is kept as it is, because it lives in the registry).
+
+Settings are stored at `%LOCALAPPDATA%\Xtension\settings.ini` as `key=value` lines. Keys this version does not know are preserved when the file is rewritten. Keyboard shortcuts in the windows: `Esc` closes them, and closing the dashboard keeps Xtension running in the notification area.
 
 Native close buttons: if Brave's own "Always hide tab close button" setting is on (it is not confirmed in every Brave version), native close buttons stay hidden. Turning off the × or exiting Xtension does **not** change that Brave setting, so native close buttons may stay hidden until you change it in Brave's settings.
 
@@ -37,6 +56,7 @@ Native close buttons: if Brave's own "Always hide tab close button" setting is o
 - If the scan is incomplete, ambiguous, slow, or the window moved, the × is hidden and the click does nothing.
 - Ctrl+W is not sent while Shift, Alt, or Win is held, because Ctrl+Shift+W would close the whole window.
 - The × window never takes focus from Brave.
+- In `hover` mode the button appears only over the confirmed selected tab, so a stray click on the tab strip cannot reach it; clicking it still goes through the same fresh validation before any keystroke.
 - Scans run on a background thread. A hung Brave does not freeze the tray; stale confirmation hides the ×; after 5 seconds diagnostics reports a stall.
 - Logs contain no tab or window titles.
 
@@ -72,8 +92,9 @@ The version comes only from `VERSION`. Edit that file to change it.
 | Static checks (`verify-source.ps1`) | Run in CI on main pushes and pull requests. |
 | Unit tests (pure core) | Run in CI. |
 | x86 and x64 builds | Run in CI. Verified in CI; release builds are produced by the tag workflow. |
-| Windows UIA fixture / scaled-font layout | Run in CI in both architectures; not real-browser or physical-monitor validation. |
-| Real Brave smoke | **Passed** with v1.97.56, x86/x64 EXEs, Windows runner at 96 DPI: overlay, switches, multiple windows, focus changes, modifiers, exact selected-tab close, window geometry, many tabs and long title. |
+| Windows UIA fixture / scaled-font layout | Run in CI in both architectures; not real-browser or physical-monitor validation. Includes settings-window layout at 100/125/150/200% text scaling, the language toggle, overlay resize and a delivered Ctrl+W chord. |
+| Real Brave smoke | **Passed** with v1.97.56 for dev2; the dev3 candidate adds hover mode, the configured 40 px button, settings persistence across a restart and corrupted-settings recovery in the same job. |
+| Published dev2 vs candidate resources | One CI job measures both EXEs on the same runner and records startup time, idle CPU, working set, handles and UI Automation scan cost in `performance.txt`. |
 | Full desktop acceptance | **Incomplete.** Physical DPI/multiple monitors, rapid-click race stress, tray/startup/graceful exit and unsupported arrangements still need manual coverage. |
 
 Release notes state which items were verified for each release. The dev2 published EXEs were also downloaded, checksum-verified and exercised in [Windows CI](https://github.com/coderunknow/Xtension/actions/runs/38579364444), not just rebuilt from source.
@@ -90,4 +111,4 @@ MIT. See `LICENSE`.
 
 ### Diagnosing a hidden button
 
-Diagnostics distinguishes current hidden state from the last scan. For a scan error, the details include the failing operation, exception type, HRESULT and application method frames. Provider messages are intentionally omitted because they can contain private browsing data. Do not share tab-list screenshots without redacting titles. A stale/incomplete/ambiguous scan never authorizes Ctrl+W. See [dev2 audit](docs/DEV2_AUDIT.md) for findings and acceptance gaps.
+Diagnostics distinguishes current hidden state from the last scan. For a scan error, the details include the failing operation, exception type, HRESULT and application method frames. Provider messages are intentionally omitted because they can contain private browsing data. Do not share tab-list screenshots without redacting titles. A stale/incomplete/ambiguous scan never authorizes Ctrl+W. See [dev3 audit](docs/DEV3_AUDIT.md) for this candidate's findings, fixes and remaining gaps, and [dev2 audit](docs/DEV2_AUDIT.md) for the previous release.

@@ -8,6 +8,10 @@ namespace Xtension
     /// <summary>
     /// The custom × button. A non-activating, tool-window form: it never takes focus from Brave, so the
     /// foreground window stays the one that was validated. Geometry is set in physical pixels with SetWindowPos.
+    ///
+    /// The window is the hit-test rectangle, so the configurable size is applied by resizing this window, not by
+    /// only changing what is painted. <see cref="ShowAt"/> is idempotent: repeating the same verified placement
+    /// costs one cheap visibility query and no move, no geometry read and no repaint.
     /// </summary>
     internal sealed class CloseButtonOverlay : Form
     {
@@ -22,6 +26,8 @@ namespace Xtension
         private bool _hover;
         private bool _pressed;
         private bool _armed;
+        private Rectangle _placedBounds = Rectangle.Empty;
+        private int _paintedSize = -1;
 
         /// <summary>Raised on a completed left click inside the button. The argument is the click position in screen coordinates.</summary>
         public event Action<Point> Clicked;
@@ -43,9 +49,15 @@ namespace Xtension
             _toolTip.InitialDelay = 450;
             _toolTip.ReshowDelay = 150;
             _toolTip.AutoPopDelay = 5000;
-            _toolTip.SetToolTip(this, "Đóng tab Brave đang được chọn (nhấp một lần)");
-            AccessibleName = "Đóng tab Brave đang được chọn";
-            AccessibleDescription = "Chỉ đóng tab đã được xác nhận là tab đang hoạt động.";
+            ApplyLanguage();
+        }
+
+        /// <summary>Refreshes the localized tooltip and accessible text. Safe to call on every language change.</summary>
+        public void ApplyLanguage()
+        {
+            _toolTip.SetToolTip(this, Strings.Get(StringId.OverlayTooltip));
+            AccessibleName = Strings.Get(StringId.OverlayAccessibleName);
+            AccessibleDescription = Strings.Get(StringId.OverlayAccessibleDescription);
         }
 
         protected override bool ShowWithoutActivation
@@ -73,16 +85,28 @@ namespace Xtension
             base.WndProc(ref m);
         }
 
-        /// <summary>Shows the button at a screen rectangle without activating it. Idempotent for an unchanged rectangle.</summary>
+        /// <summary>
+        /// Shows the button at a screen rectangle without activating it. Repeating a placement that was already
+        /// applied and verified is almost free, which keeps the periodic scan path from moving or repainting a
+        /// window that has not changed. Any failure hides the button and reports the reason.
+        /// </summary>
         public bool ShowAt(Rectangle bounds, out string failure)
         {
             failure = null;
             if (bounds.Width <= 0 || bounds.Height <= 0)
             {
                 Hide();
+                _placedBounds = Rectangle.Empty;
                 failure = "Overlay bounds are empty.";
                 return false;
             }
+
+            if (Visible && bounds == _placedBounds && _paintedSize == bounds.Width && NativeMethods.IsWindowVisible(Handle))
+            {
+                // Already placed, already verified, already painted. Nothing to do and nothing to redraw.
+                return true;
+            }
+
             // Position before first Show: avoid flashing a clickable button at an old/default location.
             if (!Visible) { Bounds = bounds; Show(); }
             bool moved = NativeMethods.SetWindowPos(Handle, NativeMethods.HwndTopmost,
@@ -92,10 +116,18 @@ namespace Xtension
             if (!moved || !NativeMethods.IsWindowVisible(Handle) || NativeMethods.GetWindowBounds(Handle) != bounds)
             {
                 Hide();
+                _placedBounds = Rectangle.Empty;
+                _paintedSize = -1;
                 failure = moved ? "Overlay visibility/bounds verification failed." : "SetWindowPos failed; Win32 error " + error + ".";
                 return false;
             }
-            Invalidate();
+            _placedBounds = bounds;
+            if (_paintedSize != bounds.Width)
+            {
+                // The painter scales from the window size, so a size change must repaint; a pure move must not.
+                _paintedSize = bounds.Width;
+                Invalidate();
+            }
             return true;
         }
 
@@ -108,6 +140,8 @@ namespace Xtension
                 _armed = false;
                 _pressed = false;
                 _hover = false;
+                _placedBounds = Rectangle.Empty;
+                _paintedSize = -1;
             }
         }
 

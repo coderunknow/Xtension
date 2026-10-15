@@ -6,9 +6,10 @@ using System.Windows.Automation;
 namespace Xtension
 {
     /// <summary>
-    /// Bounded, read-only UI Automation walk of one Brave top-level window. Must run on a worker thread, never on the UI thread.
+    /// Bounded, read-only UI Automation walk of a Brave window. Must run on a worker thread, never on the UI thread.
     /// It reads TabItem elements and never descends into a tab, page content (Document) or text input (Edit).
-    /// Properties are prefetched using an explicit CacheRequest on every navigation operation.
+    /// Properties are prefetched using an explicit CacheRequest on every navigation operation, and that request is
+    /// disposed with the scan so repeated scans cannot accumulate unmanaged automation objects.
     /// </summary>
     internal static class UiaTabScanner
     {
@@ -16,25 +17,25 @@ namespace Xtension
 
         private sealed class WalkState
         {
-            public readonly Stopwatch Watch = Stopwatch.StartNew();
+            public readonly Stopwatch Watch;
             public readonly ScanResult Result;
             public int Nodes;
             public bool Incomplete;
             public string Operation = "BuildCacheRequest";
             public CacheRequest Cache;
 
-            public WalkState(ScanResult result)
+            public WalkState(ScanResult result, Stopwatch watch)
             {
                 Result = result;
+                Watch = watch;
             }
         }
 
-        public static ScanResult Scan(IntPtr window)
+        public static ScanResult Scan(IntPtr window, int sizeLogical, int insetLogical)
         {
             ScanResult result = new ScanResult();
             result.Window = window;
             result.Dpi = NativeMethods.GetWindowDpi(window);
-
 
             Stopwatch total = Stopwatch.StartNew();
             Rectangle bounds = NativeMethods.GetWindowBounds(window);
@@ -42,12 +43,12 @@ namespace Xtension
             if (bounds.IsEmpty)
             {
                 result.Outcome = ScanOutcome.WindowUnavailable;
-                result.Message = "Không đọc được vị trí cửa sổ Brave. Đã ẩn nút ×.";
+                result.Key = ScanMessageKey.WindowBoundsUnavailable;
                 result.ElapsedMs = total.ElapsedMilliseconds;
                 return result;
             }
 
-            WalkState state = new WalkState(result);
+            WalkState state = new WalkState(result, total);
             try
             {
                 state.Cache = BuildCacheRequest();
@@ -59,7 +60,7 @@ namespace Xtension
                     if (root == null)
                     {
                         result.Outcome = ScanOutcome.WindowUnavailable;
-                        result.Message = "UI Automation không trả về phần tử gốc của cửa sổ Brave. Đã ẩn nút ×.";
+                        result.Key = ScanMessageKey.WindowRootUnavailable;
                         result.ElapsedMs = total.ElapsedMilliseconds;
                         return result;
                     }
@@ -74,16 +75,25 @@ namespace Xtension
             catch (Exception ex)
             {
                 result.Outcome = ScanOutcome.Error;
+                result.Key = ScanMessageKey.ScanFailed;
                 result.Error = ScanSafety.DescribeError(state.Operation, ex);
                 result.NodesVisited = state.Nodes;
-                result.Message = "Quét UI Automation thất bại. Đã ẩn nút ×.";
                 result.ElapsedMs = total.ElapsedMilliseconds;
                 return result;
+            }
+            finally
+            {
+                // CacheRequest holds an unmanaged automation object; one per scan must be released.
+                if (state.Cache != null)
+                {
+                    try { state.Cache.Dispose(); }
+                    catch (Exception ex) { AppLog.WarnThrottled("uia-cache", "A UI Automation cache request could not be released: " + ex.GetType().Name); }
+                }
             }
 
             // A final provider call can exceed the budget even if no further node is visited.
             if (total.ElapsedMilliseconds >= AppInfo.ScanTimeBudgetMs) state.Incomplete = true;
-            TabSelector.Apply(result, bounds, state.Incomplete, state.Nodes, total.ElapsedMilliseconds);
+            TabSelector.Apply(result, bounds, state.Incomplete, state.Nodes, total.ElapsedMilliseconds, sizeLogical, insetLogical);
             return result;
         }
 

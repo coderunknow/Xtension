@@ -29,6 +29,28 @@ namespace Xtension
         Stalled
     }
 
+    /// <summary>
+    /// Which localized sentence describes a scan result. The result stores this key, never translated text, so a
+    /// language change is visible immediately and cached state can never hold a stale translation.
+    /// </summary>
+    internal enum ScanMessageKey
+    {
+        /// <summary>No description has been assigned yet.</summary>
+        None,
+        Ready,
+        Incomplete,
+        NoTabs,
+        NoSelectedTab,
+        AmbiguousSelection,
+        UnknownSelection,
+        SelectedNotHorizontal,
+        SelectedTabTooSmall,
+        WindowBoundsUnavailable,
+        WindowRootUnavailable,
+        ScanFailed,
+        WorkerFailed
+    }
+
     /// <summary>One TabItem read from UI Automation. Name is for on-screen diagnostics only.</summary>
     internal sealed class TabInfo
     {
@@ -45,7 +67,9 @@ namespace Xtension
     internal sealed class ScanResult
     {
         public ScanOutcome Outcome = ScanOutcome.Idle;
-        public string Message = string.Empty;
+        /// <summary>Localized sentence describing this result. Derived on demand from <see cref="Key"/>.</summary>
+        public ScanMessageKey Key = ScanMessageKey.None;
+        /// <summary>Top-level Brave window this scan examined.</summary>
         public IntPtr Window = IntPtr.Zero;
         public int Dpi = TabGeometry.BaseDpi;
         public Rectangle WindowBounds;
@@ -54,13 +78,26 @@ namespace Xtension
         public int NodesVisited;
         public long ElapsedMs;
         public string Error;
+        /// <summary>Number of tabs that reported themselves as selected when the outcome was ambiguous.</summary>
+        public int AmbiguousCount;
+        private string _messageOverride;
 
-        public static ScanResult Idle(IntPtr window, ScanOutcome outcome, string message)
+        /// <summary>
+        /// Localized description. Normally derived from <see cref="Key"/> and the counters; test fixtures may set
+        /// an explicit text, which is also what the dashboard and diagnostics show for such a result.
+        /// </summary>
+        public string Message
+        {
+            get { return _messageOverride != null ? _messageOverride : Strings.Describe(this); }
+            set { _messageOverride = value; }
+        }
+
+        public static ScanResult Idle(IntPtr window, ScanOutcome outcome, ScanMessageKey key)
         {
             ScanResult result = new ScanResult();
             result.Window = window;
             result.Outcome = outcome;
-            result.Message = message;
+            result.Key = key;
             return result;
         }
     }

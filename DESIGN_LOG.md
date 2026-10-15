@@ -135,3 +135,63 @@ New user instruction, verbatim:
 - Integrate PR #2 with a normal merge commit after checking the exact updated PR head's repository CI. Do not squash, rebase, use auto-merge, bypass protections, force-push, delete the session branch, or change the published release tag/assets.
 - Verify the resulting main-branch CI and record the observed merge commit and verification links on PR #2. The PR merge record and final verification comment are the canonical integration outcome, avoiding a circular sequence of log-only merges.
 - The dev2 release remains the immutable tested commit `816d7664b79d8927731305c8f974533d65bae714`. Integration does not imply that previously documented desktop acceptance gaps or optional external-review limitations are resolved.
+
+## Entry 013 — dev3 comprehensive audit, Settings, hover mode and release (2026-10-15)
+
+Original request, verbatim:
+
+> Cho prompt toàn diện để AI nâng cấp [https://github.com/coderunknow/Xtension](https://github.com/coderunknow/Xtension) build thành v0.1.0-dev3.
+> hỏi tôi tất cả câu hỏi cần thiết trước khi ra prompt.
+
+Confirmed decisions and scope, verbatim:
+
+> 1. Phạm vi: broad-evolution
+> 2. Git workflow: pr-open
+> 3. Phát hành: publish
+> 4. Lỗi/tính năng/yêu cầu bổ sung: Tập trung vào tốc độ, lỗi tiềm tàng. Nâng cấp độ ổn định và tốc độ cho nhanh mượt nhưng tốn ít tài nguyên máy. Đồng thời thì thêm phần settting riêng cho x. Thêm các option thường có trong app và các option quan trọng (như khi con trỏ chuột di tới phần taskboard của task hiện tại thì mới hiện nút x, sửa size nút x,...).
+
+Verbatim instruction received with the task:
+
+> Update the DESIGN_LOG to suitable.
+
+Clarifications answered by the owner before implementation (recorded verbatim as quoted options):
+
+> hover_region: Tab rect ∪ × button rect + ~250 ms hide grace (recommended)
+> extra_options: Required + a few advanced options
+> ui_language: a toogle that changes between English and Vietnamese.
+> manual_acceptance: Yes — before tagging, I'll test and report
+> perf_evidence: Measure published dev2 EXE vs dev3 EXE in one CI job (recommended)
+
+Decisions and design choices for this candidate:
+
+- Baseline verified before editing: default branch `main`, tip `5917ded` (merge of PR #2), tags `v0.1.0-dev1` and `v0.1.0-dev2` present, both releases prereleases with no release marked latest, PR #1 and PR #2 merged, working tree clean. `VERSION` was `0.1.0-dev2`. Nothing from the dev2 baseline was reverted; the dev2 corrections (explicit UIA navigation cache, bounded-time fail-closed rules, freshness/epoch revalidation, privacy-safe diagnostics, measured layouts, provenance-gated packaging) are preserved and extended.
+- The hover requirement is implemented for the selected **Brave tab**, not the Windows taskbar: eligibility is the union of the confirmed selected tab's rectangle and the overlay's own rectangle, plus a bounded hide grace (default 250 ms, configurable 0–1000 ms, advanced). Inactive tabs, Brave's title bar, the taskbar and other applications never satisfy it, because eligibility is derived only from a fresh `Ready` scan of the confirmed selected horizontal tab.
+- Visibility modes: `always` (default, the established behaviour) and `hover`. Defaults change nothing for existing users; the persisted `overlayEnabled` key keeps its default `true`.
+- The custom × size is a bounded logical-pixel value (18–40, default 26) and the right inset is 0–12 logical pixels (default 3). Values are clamped at load and at input; geometry, hit testing, painting and close validation all use the same effective values, so a size change cannot leave the native window or the validated click area at the old size.
+- Language: a real toggle between Vietnamese (default, matching the shipped UI) and English, applied immediately to every user-visible string. All user-visible text moved into `src/Core/Strings.cs`; log lines and internal decision reasons stay English by design. Scan messages are stored as keys, not as localized text, so a language change re-renders immediately and stale localized text cannot survive in controller state.
+- Settings live in Xtension's own `%LOCALAPPDATA%\Xtension\settings.ini`, never in Brave's profile or Brave preferences. Start-with-Windows stays a per-user registry `Run` entry, disabled by default, and the registry remains its single source of truth (the settings window reflects it, it does not duplicate it).
+- Settings persistence hardening: in-memory cache (no re-read per frame/hover/scan), bounded file size, bounded integer parsing, enum validation with fallback, unknown/future keys preserved across rewrites, atomic replace with temporary-file cleanup on failure, and a reset-to-defaults action that persists and reapplies.
+- Performance work is limited to measured or mechanically provable costs: idempotent overlay placement (no repeated `SetWindowPos`/repaint when the bounds did not change), PID-aware identity caching for negative verdicts, change-gated UI notification instead of one snapshot + render per timer tick, disposal of the per-scan `CacheRequest`, and hover-mode scan gating that can only delay showing the × (never authorize it). No safety check, validation depth, freshness rule, cooldown, deadline or single-instance guard is relaxed to gain speed.
+- Release: candidate CI must pass on the exact commit, the owner validates the built EXE from that CI run before tagging, then tag `v0.1.0-dev3` on that same commit and let the existing tag-triggered prerelease workflow publish. PR stays open and unmerged; `main` is not touched. Residual risk, unmeasured metrics and untested desktop scenarios are recorded in `docs/DEV3_AUDIT.md` rather than claimed as accepted.
+
+## Entry 014 — dev3 implementation record and release gate (2026-10-15)
+
+Implementation decisions taken while building entry 013's plan, recorded so a later reader does not have to infer them
+from the diff:
+
+- **Pointer tracking.** Hover uses the existing UI timer, not a new high-frequency loop and not a global pointer hook. In hover mode the timer runs at 100 ms (always mode keeps the established 250 ms), which bounds the perceived latency of showing the button without adding a message-pump hook that Windows can silently remove.
+- **Scan gating in hover mode.** While the button is hidden and the pointer is outside the window's tab strip, no UI Automation scan is submitted. A pointer outside the strip cannot satisfy any eligibility rule, so this can only delay showing the button; unknown pointer position or unknown geometry falls back to scanning. This is the main idle-CPU win of hover mode and it is deliberately a *delay-only* optimisation.
+- **Change-gated notification.** The controller compares the observable fields it would report and notifies the views only when one changed, replacing a snapshot build plus render per 250 ms tick. `ForceNotify()` remains for changes that must repaint immediately (language, settings).
+- **Negative identity caching.** A non-Brave foreground is cached as a negative verdict per window and process id with a shorter lifetime than a positive verdict, so the common "user is not in Brave" state stops opening a process handle 4 times a second. The close path still passes `fresh: true`.
+- **Placement idempotence.** `ShowAt` returns immediately when the button is already visible at the same bounds with the same painted size, and still verifies the native bounds and visibility after every real move. A failed verification hides the button, as before.
+- **Settings ownership.** `TrayAppContext` owns the settings object and is the single path for every change: apply to the controller, persist, refresh tray/dashboard/overlay. The settings window is a view over that path through `ISettingsHost`, which is what makes it exception-free about the tray and testable without one.
+- **Start-with-Windows stays in the registry.** The settings window reads and writes the same per-user `Run` entry as the tray menu; it is not mirrored into `settings.ini`, so there is exactly one source of truth and no divergence to reconcile.
+- **Language.** All user-visible text is a `StringId` in `src/Core/Strings.cs` with a Vietnamese and an English row; scan results store a message key instead of text so a language change re-renders the last explanation immediately. A static rule forbids Vietnamese text outside that file.
+- **Hover sizing is not a new safety surface.** The configured size and inset flow through `TabGeometry.GetOverlayBounds`, the overlay window size, the hit-test rectangle and `CloseGuard`, from one value, so a change cannot leave validation using geometry the user is not looking at.
+- **Resource work is bounded to provable costs.** No freshness window, deadline, budget, epoch rule, cooldown, stall threshold or confirmation step was weakened. The scan interval and hover keep-time are exposed as bounded settings instead of being silently made slower.
+
+Release gate for this candidate, unchanged from entry 013: CI green on the exact commit that is tagged; the owner runs
+the EXE built from that CI run on their own Windows machine and reports; only then is `v0.1.0-dev3` tagged on that same
+commit and published as a prerelease by the existing tag-triggered workflow. The pull request stays open and unmerged,
+`main` is not touched, and no published tag or asset is modified. Residual risk and unverified surfaces are listed in
+`docs/DEV3_AUDIT.md`, including the surfaces that this candidate explicitly does not claim.

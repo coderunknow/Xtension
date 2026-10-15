@@ -61,12 +61,11 @@ namespace Xtension
         private long _runningSinceMs = Clock.Never;
         private bool _stopping;
 
-        public ScanWorker(string name, Action<ScanCompletion> completed)
-            : this(name, completed, UiaTabScanner.Scan)
-        {
-        }
-
-        internal ScanWorker(string name, Action<ScanCompletion> completed, Func<IntPtr, ScanResult> scan)
+        /// <summary>
+        /// The scan delegate is supplied by the owner so the configured × size and inset are part of every scan
+        /// decision, and so tests can inject a synthetic scanner.
+        /// </summary>
+        public ScanWorker(string name, Action<ScanCompletion> completed, Func<IntPtr, ScanResult> scan)
         {
             _completed = completed;
             _scan = scan;
@@ -148,7 +147,7 @@ namespace Xtension
                 }
                 catch (Exception ex)
                 {
-                    result = ScanResult.Idle(request.Window, ScanOutcome.Error, "Quét UI Automation gặp lỗi bất ngờ. Đã ẩn nút ×.");
+                    result = ScanResult.Idle(request.Window, ScanOutcome.Error, ScanMessageKey.WorkerFailed);
                     result.Error = ScanSafety.DescribeError("ScanWorker.Scan", ex);
                 }
 

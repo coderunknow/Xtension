@@ -32,7 +32,7 @@ namespace Xtension.Tests
         public static void SingleSelectedHorizontalTabIsReady()
         {
             ScanResult result = Result(Tab("a", 0, false), Tab("b", 190, true), Tab("c", 380, false));
-            TabSelector.Apply(result, Window, false, 40, 3);
+            TabSelector.Apply(result, Window, false, 40, 3, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
             Assert.AreEqual(ScanOutcome.Ready, result.Outcome, "one selected tab should be Ready");
             Assert.IsTrue(result.SelectedHorizontalTab != null && result.SelectedHorizontalTab.Name == "b", "selected tab should be 'b'");
         }
@@ -41,7 +41,7 @@ namespace Xtension.Tests
         public static void IncompleteScanNeverReady()
         {
             ScanResult result = Result(Tab("a", 0, true));
-            TabSelector.Apply(result, Window, true, 1500, 1000);
+            TabSelector.Apply(result, Window, true, 1500, 1000, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
             Assert.AreEqual(ScanOutcome.ScanIncomplete, result.Outcome, "incomplete scan must not be Ready");
             Assert.IsTrue(result.SelectedHorizontalTab == null, "incomplete scan must not select a tab");
         }
@@ -50,7 +50,7 @@ namespace Xtension.Tests
         public static void TwoSelectedTabsAreAmbiguous()
         {
             ScanResult result = Result(Tab("a", 0, true), Tab("b", 190, true));
-            TabSelector.Apply(result, Window, false, 10, 1);
+            TabSelector.Apply(result, Window, false, 10, 1, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
             Assert.AreEqual(ScanOutcome.AmbiguousSelection, result.Outcome, "two selected tabs must be ambiguous");
         }
 
@@ -60,7 +60,7 @@ namespace Xtension.Tests
             TabInfo unknown = Tab("a", 0, true);
             unknown.SelectionKnown = false;
             ScanResult result = Result(unknown);
-            TabSelector.Apply(result, Window, false, 5, 1);
+            TabSelector.Apply(result, Window, false, 5, 1, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
             Assert.AreEqual(ScanOutcome.NoSelectedTab, result.Outcome, "a tab with unknown selection must not count as selected");
         }
 
@@ -68,7 +68,7 @@ namespace Xtension.Tests
         public static void NoTabsIsNoTabs()
         {
             ScanResult result = Result();
-            TabSelector.Apply(result, Window, false, 3, 1);
+            TabSelector.Apply(result, Window, false, 3, 1, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
             Assert.AreEqual(ScanOutcome.NoTabs, result.Outcome, "empty tab list should be NoTabs");
         }
 
@@ -78,7 +78,7 @@ namespace Xtension.Tests
             TabInfo low = Tab("a", 0, true);
             low.Bounds = new Rectangle(0, 400, 180, 36);
             ScanResult result = Result(low);
-            TabSelector.Apply(result, Window, false, 5, 1);
+            TabSelector.Apply(result, Window, false, 5, 1, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
             Assert.AreEqual(ScanOutcome.NoSelectedTab, result.Outcome, "a selected tab outside the top strip must not be used");
         }
 
@@ -88,7 +88,7 @@ namespace Xtension.Tests
             TabInfo hidden = Tab("a", 0, true);
             hidden.IsOffscreen = true;
             ScanResult result = Result(hidden);
-            TabSelector.Apply(result, Window, false, 5, 1);
+            TabSelector.Apply(result, Window, false, 5, 1, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
             Assert.AreEqual(ScanOutcome.NoSelectedTab, result.Outcome, "an offscreen selected tab must not be used");
         }
 
@@ -96,10 +96,10 @@ namespace Xtension.Tests
         public static void ClearsStaleSelectionOnReapply()
         {
             ScanResult result = Result(Tab("a", 0, true));
-            TabSelector.Apply(result, Window, false, 5, 1);
+            TabSelector.Apply(result, Window, false, 5, 1, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
             Assert.IsTrue(result.SelectedHorizontalTab != null, "first apply should select");
             result.Tabs[0].Selected = false;
-            TabSelector.Apply(result, Window, false, 5, 1);
+            TabSelector.Apply(result, Window, false, 5, 1, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
             Assert.IsTrue(result.SelectedHorizontalTab == null, "re-apply must clear the previous selection");
         }
     }

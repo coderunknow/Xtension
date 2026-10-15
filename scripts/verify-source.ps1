@@ -15,7 +15,7 @@ $required = @(
     'LICENSE', 'VERSION', 'README.md', 'CHANGELOG.md', 'DESIGN_LOG.md', 'AGENTS_LOG.md', 'AGENTS.md',
     'Xtension.csproj', 'app.manifest.template', '.gitignore', '.gitattributes',
     'scripts\build.ps1', 'scripts\test.ps1', 'scripts\toolchain.ps1', 'scripts\update-version.ps1', 'scripts\verify-source.ps1',
-    'scripts\package.ps1', 'docs\RELEASE_CAPABILITIES.md',
+    'scripts\package.ps1', 'scripts\measure-performance.ps1', 'docs\RELEASE_CAPABILITIES.md', 'docs\DEV3_AUDIT.md',
     'tests\UnitTests\TestFramework.cs', 'tests\UnitTests\Program.cs',
     '.github\workflows\ci.yml', '.github\workflows\release.yml'
 )
@@ -48,6 +48,24 @@ foreach ($file in $sourceFiles) {
 }
 
 # C# 5 rules: the .NET Framework 4.8 csc used by build.ps1 is C# 5 at most.
+# dev3: every user-visible string lives in the string table, so a language switch cannot miss a string in UI code.
+foreach ($entry in $sourceTexts.GetEnumerator()) {
+    if ($entry.Key -eq 'src\Core\Strings.cs') { continue }
+    if ($entry.Value -match '[\u0102\u0103\u0110\u0111\u0128\u0129\u0168\u0169\u01A0\u01A1\u01AF\u01B0\u1EA0-\u1EF9]') {
+        Add-Failure "$($entry.Key) contains Vietnamese text outside src\Core\Strings.cs; user-visible text belongs in the string table."
+    }
+}
+if ($sourceTexts.ContainsKey('src\UI\SettingsForm.cs')) {
+    if ($sourceTexts['src\UI\SettingsForm.cs'] -cmatch 'TrayAppContext') {
+        Add-Failure 'The settings window must talk to the application through ISettingsHost only.'
+    }
+}
+if ($sourceTexts.ContainsKey('src\Interop\NativeMethods.cs')) {
+    if ($sourceTexts['src\Interop\NativeMethods.cs'] -cmatch 'SetCursorPos|mouse_event|SendInput\s*\(\s*MOUSE') {
+        Add-Failure 'NativeMethods must not move the pointer or inject pointer input; hover reads the pointer only.'
+    }
+}
+
 $csharp5Bans = @(
     @{ Pattern = '\?\.'; Name = 'null-conditional operator (?.)' },
     @{ Pattern = '\$"'; Name = 'interpolated string' },
@@ -114,6 +132,7 @@ $ci = Get-Content -LiteralPath (Join-Path $root '.github\workflows\ci.yml') -Raw
 if ($ci -notmatch 'verify-source\.ps1') { Add-Failure 'ci.yml does not run verify-source.ps1.' }
 if ($ci -notmatch 'test\.ps1') { Add-Failure 'ci.yml does not run the unit tests.' }
 if ($ci -notmatch 'x86' -or $ci -notmatch 'x64') { Add-Failure 'ci.yml must build both x86 and x64.' }
+if ($ci -notmatch 'measure-performance\.ps1') { Add-Failure 'ci.yml does not run the published-vs-candidate resource measurement.' }
 
 # Windows PowerShell 5.1 reads BOM-less scripts as ANSI, so every .ps1 must stay pure ASCII.
 foreach ($script in @(Get-ChildItem -LiteralPath (Join-Path $root 'scripts') -Filter '*.ps1' -File)) {

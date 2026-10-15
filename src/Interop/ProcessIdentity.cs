@@ -5,14 +5,17 @@ using System.Text;
 namespace Xtension
 {
     /// <summary>
-    /// Decides whether a top-level window belongs to brave.exe. Caches the verdict for the last window, so the
-    /// per-tick foreground check does not open a process handle on every call.
+    /// Decides whether a top-level window belongs to brave.exe. The verdict is cached per window and process id,
+    /// for positive results and for negative results, so the per-tick foreground check does not open a process
+    /// handle on every call. Negative verdicts expire sooner, because a transient failure must heal quickly.
+    /// A caller that is about to send Ctrl+W passes fresh = true and always re-queries the process.
     /// </summary>
     internal static class ProcessIdentity
     {
         private const uint ProcessQueryLimitedInformation = 0x1000;
         private const string BraveExecutable = "brave.exe";
-        private const long CacheLifetimeMs = 5000;
+        private const long PositiveCacheLifetimeMs = 5000;
+        private const long NegativeCacheLifetimeMs = 1000;
 
         private static readonly object Gate = new object();
         private static IntPtr _cachedWindow = IntPtr.Zero;
@@ -30,9 +33,11 @@ namespace Xtension
             if (window == IntPtr.Zero) return false;
             uint processId;
             if (NativeMethods.GetWindowThreadProcessId(window, out processId) == 0 || processId == 0) return false;
-            lock (Gate)
+
+            if (!fresh)
             {
-                if (!fresh && _cachedVerdict && window == _cachedWindow && processId == _cachedProcessId && !Clock.HasElapsed(_cachedAtMs, CacheLifetimeMs)) return _cachedVerdict;
+                bool cached;
+                if (TryReadCache(window, processId, out cached)) return cached;
             }
 
             bool verdict = Query(processId);
@@ -46,9 +51,21 @@ namespace Xtension
             return verdict;
         }
 
+        private static bool TryReadCache(IntPtr window, uint processId, out bool verdict)
+        {
+            verdict = false;
+            lock (Gate)
+            {
+                if (window != _cachedWindow || processId != _cachedProcessId) return false;
+                long lifetime = _cachedVerdict ? PositiveCacheLifetimeMs : NegativeCacheLifetimeMs;
+                if (Clock.HasElapsed(_cachedAtMs, lifetime)) return false;
+                verdict = _cachedVerdict;
+                return true;
+            }
+        }
+
         private static bool Query(uint processId)
         {
-
             IntPtr process = NativeMethods.OpenProcess(ProcessQueryLimitedInformation, false, processId);
             if (process == IntPtr.Zero) return false;
             try
