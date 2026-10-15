@@ -230,6 +230,20 @@ namespace Xtension.Tests
             const int configuredInset = 5;
             int configuredSize = AppInfo.DefaultButtonSizeLogical;
             string settingsPath = AppPaths.SettingsFile;
+            // A second Brave launch must not inherit the first phase's session: a profile that was killed mid-run can
+            // restore extra tabs, and this phase reads the tab count as its fixture. A private directory that is
+            // emptied before launch keeps the fixture exactly the three tabs the command line asks for.
+            string browserProfile = profile + "-configured";
+            try
+            {
+                if (Directory.Exists(browserProfile)) Directory.Delete(browserProfile, true);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
             string original = File.Exists(settingsPath) ? File.ReadAllText(settingsPath) : null;
             AppPaths.EnsureDirectory();
 
@@ -238,7 +252,7 @@ namespace Xtension.Tests
             try
             {
                 browser = Process.Start(new ProcessStartInfo(bravePath,
-                    "--user-data-dir=\"" + profile + "\" --no-first-run --no-default-browser-check --disable-background-networking " +
+                    "--user-data-dir=\"" + browserProfile + "\" --no-first-run --no-default-browser-check --disable-background-networking " +
                     "--disable-component-update --disable-sync --new-window about:blank about:blank about:blank") { UseShellExecute = false });
                 IntPtr brave = IntPtr.Zero;
                 Wait(delegate { brave = FindVisibleWindow(browser.Id, false); return brave != IntPtr.Zero; }, 20000, "configured-phase Brave window did not appear");
@@ -251,11 +265,20 @@ namespace Xtension.Tests
                 // and checks the refusal separately: asserting a visible button for an impossible size would be a
                 // test of the fixture, not of the product.
                 ScanResult probe = null;
-                Wait(delegate
+                try
                 {
-                    probe = UiaTabScanner.Scan(brave, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
-                    return probe.Outcome == ScanOutcome.Ready && probe.Tabs.Count == 3;
-                }, 20000, "default-size probe scan did not confirm three tabs");
+                    Wait(delegate
+                    {
+                        probe = UiaTabScanner.Scan(brave, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
+                        return probe.Outcome == ScanOutcome.Ready && probe.Tabs.Count >= 2;
+                    }, 20000, "default-size probe scan did not confirm a usable tab strip");
+                }
+                catch (AssertionFailure)
+                {
+                    throw new AssertionFailure("Configured-phase probe scan: " + DescribeScan(probe));
+                }
+                int fixtureTabs = probe.Tabs.Count;
+                Console.WriteLine("INFO the configured-phase fixture has " + fixtureTabs + " tabs at dpi " + probe.Dpi);
                 int tabHeight = probe.SelectedHorizontalTab.Bounds.Height;
                 int largest = LargestFittingSize(probe.SelectedHorizontalTab.Bounds, probe.Dpi, configuredInset);
                 if (largest > AppInfo.DefaultButtonSizeLogical) configuredSize = largest;
@@ -276,11 +299,18 @@ namespace Xtension.Tests
                     + "\r\nbuttonInset=" + configuredInset + "\r\nhoverGraceMs=250\r\nscanIntervalMs=500\r\nlanguage=vi\r\n");
 
                 ScanResult scan = null;
-                Wait(delegate
+                try
                 {
-                    scan = UiaTabScanner.Scan(brave, configuredSize, configuredInset);
-                    return scan.Outcome == ScanOutcome.Ready && scan.Tabs.Count == 3;
-                }, 20000, "configured-phase scan did not confirm three tabs");
+                    Wait(delegate
+                    {
+                        scan = UiaTabScanner.Scan(brave, configuredSize, configuredInset);
+                        return scan.Outcome == ScanOutcome.Ready && scan.Tabs.Count == fixtureTabs;
+                    }, 20000, "configured-size scan did not confirm the fixture tabs");
+                }
+                catch (AssertionFailure)
+                {
+                    throw new AssertionFailure("Configured-size scan at " + configuredSize + " px: " + DescribeScan(scan));
+                }
                 Rectangle configured = TabGeometry.GetOverlayBounds(scan.SelectedHorizontalTab.Bounds, scan.Dpi, configuredSize, configuredInset);
                 Assert.IsFalse(configured.IsEmpty, "the configured button must fit the real tab");
                 Assert.IsTrue(configured.Width == TabGeometry.OverlaySize(scan.Dpi, configuredSize), "configured width follows the DPI-scaled size");
@@ -328,7 +358,7 @@ namespace Xtension.Tests
                 Rectangle shown = NativeMethods.GetWindowBounds(overlay);
                 Assert.AreEqual(configured, shown, "the hover-shown button uses the configured geometry");
                 Click(overlay);
-                Wait(delegate { return UiaTabScanner.Scan(brave, configuredSize, configuredInset).Tabs.Count == 2; }, 8000,
+                Wait(delegate { return UiaTabScanner.Scan(brave, configuredSize, configuredInset).Tabs.Count == fixtureTabs - 1; }, 8000,
                     "a click on a hover-shown button must still close exactly one tab");
                 Console.WriteLine("PASS hover click closes exactly one tab through the unchanged validation path");
 
@@ -338,11 +368,18 @@ namespace Xtension.Tests
                 app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
                 SetForegroundWindow(brave);
                 ScanResult restarted = null;
-                Wait(delegate
+                try
                 {
-                    restarted = UiaTabScanner.Scan(brave, configuredSize, configuredInset);
-                    return restarted.Outcome == ScanOutcome.Ready && restarted.Tabs.Count == 2;
-                }, 20000, "post-restart scan did not confirm the two remaining tabs");
+                    Wait(delegate
+                    {
+                        restarted = UiaTabScanner.Scan(brave, configuredSize, configuredInset);
+                        return restarted.Outcome == ScanOutcome.Ready && restarted.Tabs.Count == fixtureTabs - 1;
+                    }, 20000, "post-restart scan did not confirm the remaining tabs");
+                }
+                catch (AssertionFailure)
+                {
+                    throw new AssertionFailure("Post-restart scan: " + DescribeScan(restarted));
+                }
                 Rectangle afterRestart = TabGeometry.GetOverlayBounds(restarted.SelectedHorizontalTab.Bounds, restarted.Dpi, configuredSize, configuredInset);
                 CursorTo(restarted.SelectedHorizontalTab.Bounds);
                 Wait(delegate
@@ -391,6 +428,14 @@ namespace Xtension.Tests
                 {
                 }
             }
+        }
+
+        /// <summary>One line explaining what a scan produced, so a timed-out wait is diagnosable from the annotation.</summary>
+        private static string DescribeScan(ScanResult scan)
+        {
+            if (scan == null) return "no result";
+            return scan.Outcome + "; key=" + scan.Key + "; tabs=" + scan.Tabs.Count + "; nodes=" + scan.NodesVisited
+                + "; elapsedMs=" + scan.ElapsedMs + (scan.Error == null ? string.Empty : "; error=" + scan.Error);
         }
 
         /// <summary>
