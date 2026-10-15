@@ -239,3 +239,15 @@ Rules: append new dated entries at the bottom. Do not rewrite or delete earlier 
   fixture it actually found.
 - Not verified here: the owner's own Windows desktop pass (physical DPI, mixed monitors, rapid clicking, tray and
   startup behaviour). `v0.1.0-dev3` is not tagged and PR #3 stays open and unmerged until that report exists.
+
+## 2026-10-15 - correction: the real Brave tab does hold the 40 px maximum
+
+- While fixing the smoke phase I wrote into the README and into the changelog bullet that a Brave v1.97.56 tab cannot
+  hold the 40 px maximum, and treated the earlier "configured-phase scan did not confirm three tabs" failure as evidence
+  of that. The green runs show the opposite: with the phase's own private profile the fixture has three standard
+  horizontal tabs, and the 40x40 px button is displayed over the real selected tab in both architectures. The earlier
+  failure was the inherited session, not the tab height.
+- Corrected rather than left standing: the README paragraph now states the measured fact (a 40 px button with a 5 px
+  inset fits the CI runner's Brave tab) and keeps the fail-closed rule for a tab that cannot hold the configuration. The
+  product is unchanged - the rule and its unit tests were always correct; only my explanation of one CI failure was
+  wrong. Lesson, again: a failed wait is evidence about the fixture until it is diagnosed, not about the product.

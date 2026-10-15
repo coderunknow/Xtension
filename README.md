@@ -46,9 +46,9 @@ Every option is also available from the tray menu, and every change applies imme
 
 The whole × square plus its right inset must fit inside the selected tab. If the configured combination cannot, the
 button stays hidden and the dashboard says why ("The selected tab is too small to hold the × button safely at the
-configured size. The × is hidden.") instead of drawing a button outside the tab. The tab height comes from the
-browser: the tab of Brave v1.97.56 on the CI runner cannot hold the 40 px maximum, so the largest sizes apply only
-when the browser gives the tab more room.
+configured size. The × is hidden.") instead of drawing a button outside the tab. How much room a tab has comes from
+the browser: on the CI runner a Brave v1.97.56 tab holds the 40 px maximum with a 5 px inset, and a tab that cannot
+hold the configured combination hides the button instead.
 
 Out-of-range or unreadable values are replaced by the documented default rather than being trusted. **Reset to defaults** restores every value above (the start-with-Windows entry is kept as it is, because it lives in the registry).
 
