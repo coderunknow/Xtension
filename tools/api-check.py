@@ -201,6 +201,88 @@ def main():
     for name in sorted(used - set(ids)):
         problems.append('StringId.%s is used but not declared in Strings.cs' % name)
 
+
+    # Argument-count check for calls into this project's own types. This is the class of mistake a compiler catches
+    # immediately (for example calling a two-parameter overload that was widened to four) and reading alone misses.
+    # Attribute lines, extern declarations and commas inside generic arguments are excluded, because they describe
+    # signatures rather than call sites.
+    def split_arguments(parameter_text):
+        depth = 0
+        count = 0
+        seen = False
+        for character in parameter_text:
+            if character in '<([':
+                depth += 1
+            elif character in '>)]':
+                depth -= 1
+            elif character == ',' and depth == 0:
+                count += 1
+                seen = True
+            elif not character.isspace():
+                seen = True
+        return count + 1 if seen else 0
+
+    arities = {}
+    for path, text in texts.items():
+        for line in text.split('\n'):
+            stripped = line.strip()
+            if stripped.startswith('[') or 'extern ' in line or ' delegate' in line:
+                continue
+            match = re.match(r'(?:' + MODIFIERS + r'\s+)*(?:[A-Za-z_][A-Za-z0-9_<>,.\[\]?\s]*?\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)', stripped)
+            if match:
+                arities.setdefault(match.group(1), set()).add(split_arguments(match.group(2)))
+
+    call = re.compile(r'\bnew\s+([A-Z][A-Za-z0-9_]*)\s*\(|\b([A-Z][A-Za-z0-9_]*)\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(')
+    # Generic type arguments are stripped first, so `Func<IntPtr, ScanResult>` cannot be mistaken for two arguments.
+    # A leftover angle bracket then means a comparison operator, and that call is skipped as uncertain.
+    generic = re.compile(r'(?<=[A-Za-z0-9_])<[^<>(){};=\n]*>')
+    openers = '({['
+    closers = ')}]'
+    for path, raw in texts.items():
+        text = generic.sub('', raw)
+        for match in call.finditer(text):
+            start_line = text.rfind('\n', 0, match.start()) + 1
+            line_text = text[start_line:text.find('\n', start_line) if text.find('\n', start_line) >= 0 else len(text)]
+            if 'extern ' in line_text or ' delegate' in line_text:
+                continue
+            owner = match.group(1) or match.group(2)
+            method = match.group(3)
+            name = method if method else owner
+            if owner not in types or name not in arities:
+                continue
+            if method and method not in members.get(owner, set()):
+                continue  # already reported as an unknown member
+            # Multi-line aware: commas only count at the top level of this argument list, and never inside a nested
+            # call, generic type, object initializer or indexer.
+            depth = 0
+            arguments = 0
+            seen = False
+            uncertain = False
+            index = match.end() - 1
+            while index < len(text):
+                character = text[index]
+                if character in openers:
+                    depth += 1
+                    if depth > 1 and character == '(':
+                        seen = True
+                elif character in closers:
+                    depth -= 1
+                    if depth == 0:
+                        break
+                elif character == ',' and depth == 1:
+                    arguments += 1
+                    seen = True
+                elif character in '<>' and depth == 1:
+                    # A comparison in an argument, so the argument count cannot be trusted: skip this call.
+                    uncertain = True
+                elif not character.isspace() and depth == 1:
+                    seen = True
+                index += 1
+            count = arguments + 1 if seen else 0
+            if not uncertain and count not in arities[name]:
+                problems.append('%s: %s is called with %d argument(s) but %s declares %s'
+                                % (path.relative_to(ROOT), name, count, name, sorted(arities[name])))
+
     if problems:
         print('API AUDIT: %d problem(s)' % len(problems))
         for line in problems:
