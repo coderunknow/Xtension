@@ -268,3 +268,13 @@ Rules: append new dated entries at the bottom. Do not rewrite or delete earlier 
   passing CI run on `50d9bc8` still stands for the code.
 - State at this point: CI is green on `50d9bc8` (all eight jobs), PR #3 is open and unmerged, no tag exists, and the
   only outstanding gate is the owner's run of the CI-built EXE on their own Windows machine.
+
+## 2026-10-15 - correction: the real-Brave evidence is 18 checks, not 21
+
+- The entry above and the pull request description both said the real-Brave job "passed all 21 checks". Counting the
+  `PASS` lines the job actually publishes gives 18 real checks (12 in the always-show phase, 6 in the configured
+  phase) plus the job's closing summary line "PASS isolated real-Brave smoke; not a full desktop/DPI acceptance
+  matrix." There were never 21; the number was written from memory instead of from the annotation.
+- Corrected in the pull request description (18 checks, counted from the annotation) and recorded here. It changes no
+  code, no test and no result: the same 18 checks passed in both architectures. Rule for the next report: a number
+  that appears in a document must be counted in the evidence it cites, not remembered.
