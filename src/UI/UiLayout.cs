@@ -84,8 +84,12 @@ namespace Xtension
         public static void FitToWorkingArea(Form form)
         {
             Rectangle area = Screen.FromControl(form).WorkingArea;
-            form.MinimumSize = new Size(Math.Min(form.MinimumSize.Width, area.Width), Math.Min(form.MinimumSize.Height, area.Height));
-            form.Size = new Size(Math.Min(form.Width, area.Width), Math.Min(form.Height, area.Height));
+            Size minimum = new Size(Math.Min(form.MinimumSize.Width, area.Width), Math.Min(form.MinimumSize.Height, area.Height));
+            if (form.MinimumSize != minimum) form.MinimumSize = minimum;
+            Size size = new Size(Math.Min(form.Width, area.Width), Math.Min(form.Height, area.Height));
+            // Setting Size runs the layout engine and a native move even when the value is unchanged, so only move
+            // the window when it really has to shrink to fit the working area.
+            if (form.Size != size) form.Size = size;
         }
 
         /// <summary>Height a single-line control needs for the current font, so numeric rows stay readable.</summary>
@@ -95,8 +99,46 @@ namespace Xtension
         }
     }
 
+    /// <summary>
+    /// One-entry measurement cache for a wrapping control. WinForms asks a control for its preferred size several
+    /// times per layout pass with the same text, font and width, and every miss is a GDI text measurement, which is
+    /// what made the settings window slow to appear. The entry is dropped whenever the text or the font changes, so a
+    /// relabel, a language switch or a scaling change can never reuse a stale size.
+    /// </summary>
+    internal sealed class TextMeasurement
+    {
+        private string _text;
+        private Font _font;
+        private int _width;
+        private Size _size;
+        private bool _valid;
+
+        public Size Measure(string text, Font font, int width, TextFormatFlags flags)
+        {
+            if (_valid && width == _width && font == _font && string.Equals(text, _text, StringComparison.Ordinal)) return _size;
+            _text = text;
+            _font = font;
+            _width = width;
+            _valid = true;
+            _size = TextRenderer.MeasureText(text == null ? string.Empty : text, font,
+                new Size(Math.Max(1, width), int.MaxValue), flags);
+            return _size;
+        }
+
+        public void Clear()
+        {
+            _valid = false;
+            _text = null;
+            _font = null;
+            _width = 0;
+            _size = Size.Empty;
+        }
+    }
+
     internal sealed class WrappingCheckBox : CheckBox
     {
+        private readonly TextMeasurement _measure = new TextMeasurement();
+
         public override Size GetPreferredSize(Size proposedSize)
         {
             Size natural = base.GetPreferredSize(proposedSize);
@@ -104,15 +146,29 @@ namespace Xtension
             int width = Math.Max(1, Parent.ClientSize.Width - Parent.Padding.Horizontal - Margin.Horizontal);
             if (natural.Width <= width) return natural;
             int glyph = Math.Max(24, Font.Height + 8);
-            Size text = TextRenderer.MeasureText(Text, Font, new Size(Math.Max(1, width - glyph), int.MaxValue),
+            Size text = _measure.Measure(Text, Font, Math.Max(1, width - glyph),
                 TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl);
             return new Size(width, Math.Max(natural.Height, text.Height + 8));
+        }
+
+        protected override void OnTextChanged(EventArgs e)
+        {
+            _measure.Clear();
+            base.OnTextChanged(e);
+        }
+
+        protected override void OnFontChanged(EventArgs e)
+        {
+            _measure.Clear();
+            base.OnFontChanged(e);
         }
     }
 
     /// <summary>Wrap and measure text at the available width, including Vietnamese accents and padding.</summary>
     internal sealed class WrappingLabel : Label
     {
+        private readonly TextMeasurement _measure = new TextMeasurement();
+
         public WrappingLabel()
         {
             AutoSize = true;
@@ -125,9 +181,21 @@ namespace Xtension
             int width = proposedSize.Width > 1 && proposedSize.Width < int.MaxValue
                 ? proposedSize.Width : Math.Max(1, Width);
             int textWidth = Math.Max(1, width - Padding.Horizontal);
-            Size measured = TextRenderer.MeasureText(Text, Font, new Size(textWidth, int.MaxValue),
+            Size measured = _measure.Measure(Text, Font, textWidth,
                 TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl | TextFormatFlags.NoPrefix);
             return new Size(width, measured.Height + Padding.Vertical);
+        }
+
+        protected override void OnTextChanged(EventArgs e)
+        {
+            _measure.Clear();
+            base.OnTextChanged(e);
+        }
+
+        protected override void OnFontChanged(EventArgs e)
+        {
+            _measure.Clear();
+            base.OnFontChanged(e);
         }
     }
 }

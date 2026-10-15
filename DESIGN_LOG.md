@@ -195,3 +195,34 @@ the EXE built from that CI run on their own Windows machine and reports; only th
 commit and published as a prerelease by the existing tag-triggered workflow. The pull request stays open and unmerged,
 `main` is not touched, and no published tag or asset is modified. Residual risk and unverified surfaces are listed in
 `docs/DEV3_AUDIT.md`, including the surfaces that this candidate explicitly does not claim.
+
+## Entry 015 - Owner reports latency, directs the merge and the dev3 tag (2026-10-15)
+
+Owner direction, quoted verbatim: "Ok but the delay is significant. So please make it as fast as possible cleanly. And
+the setting is lag at the opening. Finally merge and tag release. Audit carefully. Make no mistakes."
+
+- **The release gate changes here, on the owner's instruction.** Entries 013 and 014 made the owner's own Windows pass a
+  precondition for the tag. The owner has now used the candidate on their own machine - the noticeable delay and the
+  settings window lag are observations from that use - and asks for the release instead of another report cycle. The
+  remaining gates stay: CI green on the exact commit that is tagged, the tag pushed on the merged commit, and no
+  published tag, release or asset modified.
+- **Speed is gained at the cause, never by relaxing a rule.** Three causes were found and removed: the hover scan waited
+  out the interval that belonged to the previous state instead of scanning the moment the pointer reached the tab strip;
+  a newly focused Brave window was not scanned until the next interval; and both windows in the UI were built row by row,
+  re-measuring every wrapping label on every layout pass, with a `Font` object per control and an unconditional resize on
+  show. The fixes are: an arrival in the tab strip forces one scan on that tick and the strip uses the documented minimum
+  interval while the pointer stays inside it, a focus change scans immediately, and the windows build with layout
+  suspended (one layout pass), measure each text once per text/width/font with invalidation on change, share fonts by
+  role, and skip the fit-to-working-area resize when there is nothing to do.
+- **The one visible delay that is deliberately kept** is the 800 ms close cooldown after a Ctrl+W: it is what stops a
+  double click from closing the next tab, and the real-Brave job asserts it ("no consecutive close"). The owner asked for
+  speed "cleanly", and removing a safety rule is not a clean speed-up. Likewise untouched: the 1500 ms staleness window,
+  the 3000 ms close-validation deadline, the 1000 ms / 1500 node scan budget, the 5000 ms stall threshold and the epoch
+  rule.
+- **No new hard-coded cadence.** The fast path uses `AppInfo.MinScanIntervalMs`, which is the documented minimum of the
+  user-facing `scanIntervalMs` setting, so the configured value still bounds what happens everywhere else and the
+  behaviour stays explainable from the settings window.
+- **Release path recorded before it was taken:** merge PR #3 with a merge commit (matching PR #1 and PR #2, which were
+  merged the same way), push `v0.1.0-dev3` on the merged commit, and let the existing tag-triggered workflow build both
+  architectures and publish the prerelease with the two EXEs, the source zip and `SHA256SUMS.txt`. Evidence for every
+  step is recorded in `AGENTS_LOG.md`.

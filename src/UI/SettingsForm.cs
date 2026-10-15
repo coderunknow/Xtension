@@ -34,6 +34,12 @@ namespace Xtension
         private RadioButton _languageEnglish;
         private CheckBox _startupBox;
         private Label _status;
+        // Four shared fonts instead of a new Font object per control: fewer GDI objects to create, compare and
+        // dispose, and the window scales as one unit because every control that shares a role shares the object.
+        private readonly Font _bodyFont;
+        private readonly Font _buttonFont;
+        private readonly Font _groupFont;
+        private readonly Font _titleFont;
         private bool _loading;
         private bool _pendingApply;
         private bool _allowClose;
@@ -41,8 +47,12 @@ namespace Xtension
         public SettingsForm(ISettingsHost host)
         {
             _host = host;
+            _bodyFont = OwnFont(9F, FontStyle.Regular);
+            _buttonFont = OwnFont(9F, FontStyle.Bold);
+            _groupFont = OwnFont(10F, FontStyle.Bold);
+            _titleFont = OwnFont(15F, FontStyle.Bold);
             AutoScaleMode = AutoScaleMode.Font;
-            Font = OwnFont(9F, FontStyle.Regular);
+            Font = _bodyFont;
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(400, 320);
             Size = new Size(760, 720);
@@ -61,42 +71,56 @@ namespace Xtension
             content.Padding = new Padding(18, 16, 18, 14);
             viewport.Controls.Add(content);
             Controls.Add(viewport);
-
-            TableLayoutPanel header = UiLayout.Stack();
-            header.BackColor = _navy;
-            header.Padding = new Padding(18, 12, 18, 12);
-            UiLayout.Add(header, UiLayout.Localize(new WrappingLabel { Font = OwnFont(15F, FontStyle.Bold), ForeColor = Color.White }, StringId.SettingsTitle));
-            UiLayout.Add(header, UiLayout.Localize(new WrappingLabel { ForeColor = Color.FromArgb(203, 213, 225) }, StringId.SettingsIntro));
-            UiLayout.Add(content, header);
-
-            BuildButtonGroup(content);
-            BuildVisibilityGroup(content);
-            BuildGeometryGroup(content);
-            BuildAdvancedGroup(content);
-            BuildGeneralGroup(content);
-
-            UiLayout.Add(content, UiLayout.Localize(new WrappingLabel
+            // Build the whole tree with layout suspended. WinForms lays a container out again for every row that is
+            // added to it, so building a window row by row costs one full layout per row; this makes it one pass.
+            SuspendLayout();
+            viewport.SuspendLayout();
+            content.SuspendLayout();
+            try
             {
-                Padding = new Padding(14, 10, 12, 10), BackColor = Color.White, ForeColor = _muted, Margin = new Padding(0, 10, 0, 6)
-            }, StringId.SettingsBraveNote));
+                TableLayoutPanel header = UiLayout.Stack();
+                header.BackColor = _navy;
+                header.Padding = new Padding(18, 12, 18, 12);
+                UiLayout.Add(header, UiLayout.Localize(new WrappingLabel { Font = _titleFont, ForeColor = Color.White }, StringId.SettingsTitle));
+                UiLayout.Add(header, UiLayout.Localize(new WrappingLabel { ForeColor = Color.FromArgb(203, 213, 225) }, StringId.SettingsIntro));
+                UiLayout.Add(content, header);
 
-            _status = new WrappingLabel { ForeColor = _muted, Padding = new Padding(0, 6, 0, 0) };
-            UiLayout.Add(content, _status);
+                BuildButtonGroup(content);
+                BuildVisibilityGroup(content);
+                BuildGeometryGroup(content);
+                BuildAdvancedGroup(content);
+                BuildGeneralGroup(content);
 
-            FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Padding = new Padding(0, 6, 0, 0) };
-            Button resetButton = CreateButton(StringId.SettingsReset, Color.FromArgb(254, 226, 226), Color.FromArgb(185, 28, 28));
-            resetButton.Click += delegate { ResetToDefaults(); };
-            Button diagnosticsButton = CreateButton(StringId.SettingsButtonDiagnostics, Color.FromArgb(226, 232, 240), _text);
-            diagnosticsButton.Click += delegate { if (_host != null) _host.ShowDiagnostics(); };
-            Button logButton = CreateButton(StringId.SettingsButtonLog, Color.FromArgb(226, 232, 240), _text);
-            logButton.Click += delegate { if (_host != null) _host.OpenLog(); };
-            Button closeButton = CreateButton(StringId.SettingsClose, Color.FromArgb(226, 232, 240), _text);
-            closeButton.Click += delegate { Close(); };
-            actions.Controls.Add(resetButton);
-            actions.Controls.Add(diagnosticsButton);
-            actions.Controls.Add(logButton);
-            actions.Controls.Add(closeButton);
-            UiLayout.Add(content, actions);
+                UiLayout.Add(content, UiLayout.Localize(new WrappingLabel
+                {
+                    Padding = new Padding(14, 10, 12, 10), BackColor = Color.White, ForeColor = _muted, Margin = new Padding(0, 10, 0, 6)
+                }, StringId.SettingsBraveNote));
+
+                _status = new WrappingLabel { ForeColor = _muted, Padding = new Padding(0, 6, 0, 0) };
+                UiLayout.Add(content, _status);
+
+                FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Padding = new Padding(0, 6, 0, 0) };
+                Button resetButton = CreateButton(StringId.SettingsReset, Color.FromArgb(254, 226, 226), Color.FromArgb(185, 28, 28));
+                resetButton.Click += delegate { ResetToDefaults(); };
+                Button diagnosticsButton = CreateButton(StringId.SettingsButtonDiagnostics, Color.FromArgb(226, 232, 240), _text);
+                diagnosticsButton.Click += delegate { if (_host != null) _host.ShowDiagnostics(); };
+                Button logButton = CreateButton(StringId.SettingsButtonLog, Color.FromArgb(226, 232, 240), _text);
+                logButton.Click += delegate { if (_host != null) _host.OpenLog(); };
+                Button closeButton = CreateButton(StringId.SettingsClose, Color.FromArgb(226, 232, 240), _text);
+                closeButton.Click += delegate { Close(); };
+                actions.Controls.Add(resetButton);
+                actions.Controls.Add(diagnosticsButton);
+                actions.Controls.Add(logButton);
+                actions.Controls.Add(closeButton);
+                UiLayout.Add(content, actions);
+            }
+            finally
+            {
+                content.ResumeLayout(false);
+                viewport.ResumeLayout(false);
+                ResumeLayout(false);
+                PerformLayout();
+            }
 
             LoadFromHost();
             ApplyLanguage();
@@ -360,7 +384,7 @@ namespace Xtension
             group.BackColor = Color.White;
             group.Padding = new Padding(14, 10, 14, 12);
             group.Margin = new Padding(0, 6, 0, 6);
-            UiLayout.Add(group, UiLayout.Localize(new WrappingLabel { Font = OwnFont(10F, FontStyle.Bold), ForeColor = _navy }, titleId));
+            UiLayout.Add(group, UiLayout.Localize(new WrappingLabel { Font = _groupFont, ForeColor = _navy }, titleId));
             UiLayout.Add(parent, group);
             return group;
         }
@@ -401,7 +425,7 @@ namespace Xtension
                 Padding = new Padding(10, 6, 10, 6),
                 BackColor = backColor,
                 ForeColor = foreColor,
-                Font = OwnFont(9F, FontStyle.Bold),
+                Font = _buttonFont,
                 FlatStyle = FlatStyle.Flat,
                 Cursor = Cursors.Hand,
                 UseVisualStyleBackColor = false,

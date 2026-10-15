@@ -26,6 +26,18 @@ Prerelease. Windows x86/x64, .NET Framework 4.8, C# 5. No dependency added. No p
 - The dev2 wording edge case where a minimized non-Brave window was described as "Brave minimized" is corrected; the wording now requires a Brave identity.
 - In hover mode, UI Automation work is skipped while the pointer cannot be inside the tab strip. This can only delay showing the × by one interval and can never authorise a close.
 
+### Performance
+
+- **The × no longer waits out the scan interval.** In `hover` mode the moment the pointer enters the tab strip forces the
+  next scan to run on that tick, and while the pointer is inside the strip the loop runs at the documented minimum
+  interval instead of the configured one; in `always` mode a window that newly comes to the front is scanned immediately.
+  The steady-state cadence, every deadline, the staleness window and every confirmation rule are unchanged, and no extra
+  scan is submitted while the pointer is away from the tab strip.
+- **Windows open faster.** The settings window and the dashboard add their whole control tree with layout suspended and
+  lay it out once, each wrapping label measures its text once per text/width/font instead of once per layout pass, and
+  both windows share a small set of fonts instead of creating one `Font` per control. `FitToWorkingArea` no longer
+  resizes, relocates and relayouts a window that already fits the working area.
+
 ### Safety
 
 - The close path is unchanged: a click still only sends Ctrl+W after a fresh scan of the current foreground Brave window confirms the click landed on the × of the one selected horizontal tab, blocking modifiers are not held, and the foreground window is re-read immediately before injection.

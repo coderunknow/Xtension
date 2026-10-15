@@ -71,6 +71,9 @@ namespace Xtension
         private long _closeStartedMs = Clock.Never;
         private string _overlayFailure = string.Empty;
         private Rectangle _hoverRegion = Rectangle.Empty;
+        /// <summary>Hover mode: was the pointer inside the tab strip on the previous tick? Used to scan the moment the
+        /// pointer arrives instead of waiting out an interval that belongs to the previous state.</summary>
+        private bool _stripPointerInside;
 
         // Last state that was pushed to the views, so an uneventful tick costs nothing.
         private IntPtr _notifiedForeground = new IntPtr(-1);
@@ -121,7 +124,8 @@ namespace Xtension
             long now = Clock.NowMs;
 
             IntPtr foreground = NativeMethods.GetForegroundRootWindow();
-            if (foreground != _foreground)
+            bool foregroundChanged = foreground != _foreground;
+            if (foregroundChanged)
             {
                 _foreground = foreground;
                 _hover.Reset();
@@ -172,6 +176,9 @@ namespace Xtension
 
             _targetWindow = foreground;
             _idleReason = StringId.None;
+            // A window that just came to the front is a new thing to confirm: scan it now instead of waiting out the
+            // interval that belonged to the previous window. One extra scan per focus change, cadence unchanged.
+            if (foregroundChanged) _lastOverlayRequestMs = Clock.Never;
 
             // Hide when the confirmation is older than the stale window (for example, a stalled UIA call).
             if (_overlay.Visible && Clock.HasElapsed(_lastConfirmedMs, AppInfo.ScanStaleMs))
@@ -180,8 +187,11 @@ namespace Xtension
                 _hover.Reset();
             }
 
-            if (!_closeInFlight && !_overlayWorker.IsBusy && Clock.HasElapsed(_lastOverlayRequestMs, _settings.ScanIntervalMs)
-                && ShouldScanNow(foreground))
+            // The pointer gate is evaluated on every tick (it is what remembers where the pointer is), and the
+            // interval that follows it is the effective one, so an arrival in the tab strip is served immediately.
+            bool pointerAllowsScan = ShouldScanNow(foreground);
+            if (!_closeInFlight && !_overlayWorker.IsBusy && pointerAllowsScan
+                && Clock.HasElapsed(_lastOverlayRequestMs, EffectiveScanIntervalMs()))
             {
                 _lastOverlayRequestMs = now;
                 Submit(_overlayWorker, ScanKind.Overlay, foreground, Point.Empty);
@@ -196,20 +206,39 @@ namespace Xtension
         /// <summary>
         /// Hover mode only: in always mode every tick scans, as before. In hover mode the pointer must be inside the
         /// window's tab strip (or the button must already be visible) before a scan is worth submitting. A pointer
-        /// outside the strip cannot satisfy any eligibility rule, so this can only delay the button by one scan
-        /// interval and can never authorize a close.
+        /// outside the strip cannot satisfy any eligibility rule, so this can only delay the button and can never
+        /// authorize a close.
+        ///
+        /// The transition into the strip is the moment the user asks for the tab, so it forces the next scan to happen
+        /// on this tick rather than after the rest of the configured interval. That is one scan per arrival, never a
+        /// tighter loop: while the pointer stays inside, the ordinary cadence applies.
         /// </summary>
         private bool ShouldScanNow(IntPtr window)
         {
             if (_settings.VisibilityMode != OverlayVisibilityMode.HoverOnSelectedTab) return true;
-            if (_overlay.Visible) return true;
             Rectangle windowBounds = NativeMethods.GetWindowBounds(window);
             if (windowBounds.IsEmpty) return true;
             Point pointer;
             if (!NativeMethods.TryGetPointerPosition(out pointer)) return true;
             Rectangle strip = TabGeometry.GetTabStripRegion(windowBounds, NativeMethods.GetWindowDpi(window));
             if (strip.IsEmpty) return true;
-            return strip.Contains(pointer);
+            bool inside = strip.Contains(pointer);
+            if (inside && !_stripPointerInside) _lastOverlayRequestMs = Clock.Never;
+            _stripPointerInside = inside;
+            return _overlay.Visible || inside;
+        }
+
+        /// <summary>
+        /// Scan interval for the current state. While the pointer is inside the tab strip in hover mode the user is
+        /// working with the tab in front of them, so the loop runs at the documented minimum instead of waiting out
+        /// the full configured interval; outside the strip the configured interval applies unchanged. No deadline,
+        /// staleness window, budget or confirmation rule is affected.
+        /// </summary>
+        private int EffectiveScanIntervalMs()
+        {
+            if (_settings.VisibilityMode == OverlayVisibilityMode.HoverOnSelectedTab && _stripPointerInside
+                && _settings.ScanIntervalMs > AppInfo.MinScanIntervalMs) return AppInfo.MinScanIntervalMs;
+            return _settings.ScanIntervalMs;
         }
 
         /// <summary>
@@ -259,6 +288,8 @@ namespace Xtension
             if (mode != OverlayVisibilityMode.HoverOnSelectedTab) mode = OverlayVisibilityMode.AlwaysWhenSafe;
             if (_settings.VisibilityMode == mode) return;
             _settings.VisibilityMode = mode;
+            // The next arrival in the tab strip is a new arrival, whatever the pointer happens to be doing now.
+            _stripPointerInside = false;
             _notice = StringId.None;
             InvalidateConfirmation();
             AppLog.Info("Visibility mode set to " + AppSettings.VisibilityToken(mode) + ".");

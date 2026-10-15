@@ -349,6 +349,43 @@ namespace Xtension.Tests
         }
 
         /// <summary>
+        /// Opening the window must not spend its time measuring the same text over and over, and the geometry it ends
+        /// up with must be exactly the geometry a second pass produces. This guards the measurement cache in
+        /// <see cref="UiLayout"/>: a stale entry would silently change the layout on the next pass, and clipping
+        /// assertions elsewhere would not notice a window that is simply slow to build.
+        /// </summary>
+        [Test]
+        public static void SettingsWindowBuildsOnceAndLaysOutStably()
+        {
+            RecordingSettingsHost host = new RecordingSettingsHost();
+            Stopwatch open = Stopwatch.StartNew();
+            using (SettingsForm form = new SettingsForm(host))
+            {
+                form.PrepareForExit();
+                form.Show();
+                Application.DoEvents();
+                open.Stop();
+                Console.WriteLine("INFO settings window built and shown in " + open.ElapsedMilliseconds + " ms");
+
+                List<Control> controls = AllControls(form);
+                Rectangle[] before = new Rectangle[controls.Count];
+                for (int index = 0; index < controls.Count; index++) before[index] = controls[index].Bounds;
+
+                form.PerformLayout();
+                Application.DoEvents();
+                form.PerformLayout();
+                Application.DoEvents();
+
+                for (int index = 0; index < controls.Count; index++)
+                {
+                    Assert.AreEqual(before[index], controls[index].Bounds,
+                        "a repeated layout pass moved " + controls[index].GetType().Name + "; the text measurement cache is stale");
+                }
+                form.Close();
+            }
+        }
+
+        /// <summary>
         /// Round trip through the window's own controls: host values reach the controls, control values reach the
         /// host, and an out-of-range value coming from anywhere is repaired instead of thrown or shown as-is.
         /// </summary>

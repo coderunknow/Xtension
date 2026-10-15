@@ -63,6 +63,10 @@ Native close buttons: if Brave's own "Always hide tab close button" setting is o
 - Ctrl+W is not sent while Shift, Alt, or Win is held, because Ctrl+Shift+W would close the whole window.
 - The × window never takes focus from Brave.
 - In `hover` mode the button appears only over the confirmed selected tab, so a stray click on the tab strip cannot reach it; clicking it still goes through the same fresh validation before any keystroke.
+- The × appears as soon as the pointer reaches the tab strip: arriving there asks for a scan immediately instead of
+  waiting out the rest of the scan interval, and while the pointer is inside the strip `hover` mode scans at the
+  documented minimum interval. Scanning stops again while the pointer is elsewhere, so responsiveness costs nothing
+  when the pointer is not on a tab.
 - Scans run on a background thread. A hung Brave does not freeze the tray; stale confirmation hides the ×; after 5 seconds diagnostics reports a stall.
 - Logs contain no tab or window titles.
 

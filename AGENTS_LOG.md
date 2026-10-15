@@ -278,3 +278,37 @@ Rules: append new dated entries at the bottom. Do not rewrite or delete earlier 
 - Corrected in the pull request description (18 checks, counted from the annotation) and recorded here. It changes no
   code, no test and no result: the same 18 checks passed in both architectures. Rule for the next report: a number
   that appears in a document must be counted in the evidence it cites, not remembered.
+
+## 2026-10-15 - dev3 responsiveness work: the x no longer waits out the interval, and windows open faster
+
+- Owner report: the delay before the button appears is significant, and the settings window lags when it opens. Owner
+  direction: make it as fast as possible cleanly, then merge and tag. Both causes were removed at their source; no
+  freshness window, deadline, budget, cooldown, stall rule or confirmation step was touched.
+- **Hover arrival.** `ActiveTabController.ShouldScanNow` used to be consulted only after the interval gate, so a pointer
+  that arrived just after a scan waited up to a full interval (500 ms default) for the button. The pointer gate now runs
+  on every tick and remembers whether the pointer is in the tab strip; the outside-to-inside transition clears the
+  interval, so one scan is submitted on that tick, and `EffectiveScanIntervalMs()` uses the documented minimum (300 ms)
+  while the pointer stays inside the strip. Away from the strip nothing changes: no scan is submitted at all. The flag is
+  re-armed on a mode change and whenever the pointer leaves, so a resting pointer cannot cause a scan loop (the worker
+  also still allows only one scan at a time).
+- **Windows coming to the front.** A foreground change (another Brave window, or Brave returning) now clears the interval
+  for the next tick, so the confirmed overlay follows an alt-tab immediately instead of waiting out the interval that
+  belonged to the previous window.
+- **Window construction.** `SettingsForm` and `MainForm` added one row at a time to auto-sizing `TableLayoutPanel`s, so
+  WinForms ran a full layout pass per row, and every `WrappingLabel`/`WrappingCheckBox` re-measured its text with GDI on
+  every pass; each control also created its own `Font`, and `UiLayout.FitToWorkingArea` assigned `Size` even when the
+  window already fitted. Now: the tree is built with layout suspended and laid out once, `UiLayout.TextMeasurement` caches
+  the last measurement per control and drops it on `OnTextChanged`/`OnFontChanged`, the two windows share a handful of
+  fonts by role (four in the settings window, five in the dashboard), and the fit check assigns nothing when nothing has
+  to change.
+- **New regression test.** `SettingsWindowBuildsOnceAndLaysOutStably` (Windows harness) opens the settings window, prints
+  `INFO settings window built and shown in N ms` (the harness now forwards `INFO` lines as CI notices, so the number is
+  readable on the checks page) and then asserts that two further layout passes leave every control's bounds exactly as
+  they were - which is what a stale measurement cache would break.
+- Local gates after the work, all clean: `tools/api-check.py` ("API audit clean: 66 types, 143 StringIds, 143 table rows",
+  "Scope audit clean: 512 local declarations, no name is declared twice in one block chain") and `tools/verify-source.py`
+  (passed, `v0.1.0-dev3`). The compiler-level proof is the CI run recorded below.
+- Environment note, recorded for honesty: this session's local git refs were found rewound to `main` (`5917ded`) with the
+  dev3 work left in the working tree. Nothing was lost - the branch tip `27cba73` was verified on the remote with
+  `git ls-remote`, and the local branch was restored to it with `git reset --mixed origin/arena/8c38d759-xtension`, which
+  does not touch `main` or the working tree. `main` was never modified by this session.

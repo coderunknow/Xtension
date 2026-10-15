@@ -22,6 +22,13 @@ namespace Xtension
         private readonly Color _red = Color.FromArgb(185, 28, 28);
         private readonly Color _text = Color.FromArgb(31, 41, 55);
         private readonly Color _muted = Color.FromArgb(100, 116, 139);
+        // Shared fonts instead of a new Font object per control, for the same reason as the settings window: fewer
+        // GDI objects to create and dispose, and one object per role, so the window scales as a unit.
+        private readonly Font _bodyFont;
+        private readonly Font _badgeFont;
+        private readonly Font _headlineFont;
+        private readonly Font _titleFont;
+        private readonly Font _buttonFont;
         private bool _suppressStartupEvent;
         private bool _allowClose;
         private bool _closeTipShown;
@@ -52,7 +59,12 @@ namespace Xtension
             MinimizeBox = true;
             ShowInTaskbar = true;
             BackColor = Color.FromArgb(243, 246, 250);
-            Font = OwnFont(9F, FontStyle.Regular);
+            _bodyFont = OwnFont(9F, FontStyle.Regular);
+            _badgeFont = OwnFont(9F, FontStyle.Bold);
+            _headlineFont = OwnFont(13F, FontStyle.Bold);
+            _titleFont = OwnFont(17F, FontStyle.Bold);
+            _buttonFont = OwnFont(9F, FontStyle.Bold);
+            Font = _bodyFont;
             AutoScaleMode = AutoScaleMode.Font;
             KeyPreview = true;
 
@@ -61,63 +73,78 @@ namespace Xtension
             content.Padding = new Padding(18, 16, 18, 14);
             viewport.Controls.Add(content);
             Controls.Add(viewport);
-
-            TableLayoutPanel header = UiLayout.Stack();
-            header.BackColor = _navy;
-            header.Padding = new Padding(18, 12, 18, 12);
-            UiLayout.Add(header, new WrappingLabel { Text = AppInfo.ProductName, Font = OwnFont(17F, FontStyle.Bold), ForeColor = Color.White });
-            UiLayout.Add(header, UiLayout.Localize(new WrappingLabel { ForeColor = Color.FromArgb(203, 213, 225) }, StringId.DashboardTagline));
-            UiLayout.Add(content, header);
-
-            TableLayoutPanel statusCard = UiLayout.Stack();
-            statusCard.BackColor = Color.White;
-            statusCard.Padding = new Padding(14);
-            _badge = new WrappingLabel { Font = OwnFont(9F, FontStyle.Bold), ForeColor = _blue, Text = Strings.Get(StringId.BadgeStarting) };
-            _headline = new WrappingLabel { Font = OwnFont(13F, FontStyle.Bold), ForeColor = _text, Text = Strings.Get(StringId.HeadlineStarting) };
-            Label activeLabel = UiLayout.Localize(new WrappingLabel { ForeColor = _muted }, StringId.LabelActiveTab);
-            // Selectable and horizontally scrollable: a long title is never silently truncated.
-            _tabName = new TextBox { ReadOnly = true, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = Color.White, ForeColor = _text, Text = Strings.Get(StringId.NoConfirmedTab) };
-            UiLayout.Add(statusCard, _badge);
-            UiLayout.Add(statusCard, _headline);
-            UiLayout.Add(statusCard, activeLabel);
-            UiLayout.Add(statusCard, _tabName);
-            UiLayout.Add(content, statusCard);
-
-            FlowLayoutPanel toggleRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Padding = new Padding(0, 9, 0, 4) };
-            _toggleButton = CreateButton(Strings.Get(StringId.ToggleTurnOff), _red, Color.White, 166, 40);
-            _toggleButton.Margin = new Padding(0, 0, 18, 4);
-            _toggleButton.Click += delegate { _app.ToggleOverlayFromDashboard(); };
-            _startupBox = UiLayout.Localize(new WrappingCheckBox { AutoSize = true, Margin = new Padding(2, 12, 0, 4), ForeColor = _text }, StringId.MenuStartup);
-            _startupBox.CheckedChanged += delegate
+            // Build the tree with layout suspended and lay it out once, so the window does not run a layout pass
+            // for every row that is added to it (see SettingsForm, which does the same).
+            SuspendLayout();
+            viewport.SuspendLayout();
+            content.SuspendLayout();
+            try
             {
-                if (!_suppressStartupEvent) _app.SetLaunchAtLogin(_startupBox.Checked);
-            };
-            toggleRow.Controls.Add(_toggleButton);
-            toggleRow.Controls.Add(_startupBox);
-            UiLayout.Add(content, toggleRow);
 
-            FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Padding = new Padding(0, 6, 0, 4) };
-            Button settingsButton = CreateButton(Strings.Get(StringId.ButtonXtensionSettings), _blue, Color.White, 152, 38);
-            settingsButton.Click += delegate { _app.ShowSettings(); };
-            Button diagnosticsButton = CreateButton(Strings.Get(StringId.ButtonDiagnostics), Color.FromArgb(226, 232, 240), _text, 126, 38);
-            diagnosticsButton.Click += delegate { _app.ShowDiagnostics(); };
-            Button braveSettingsButton = CreateButton(Strings.Get(StringId.ButtonBraveSettings), Color.FromArgb(226, 232, 240), _text, 126, 38);
-            braveSettingsButton.Click += delegate { _app.OpenBraveAppearanceSettings(); };
-            Button logButton = CreateButton(Strings.Get(StringId.ButtonOpenLog), Color.FromArgb(226, 232, 240), _text, 126, 38);
-            logButton.Click += delegate { _app.OpenLog(); };
-            Button exitButton = CreateButton(Strings.Get(StringId.ButtonExit), Color.FromArgb(254, 226, 226), _red, 132, 38);
-            exitButton.Click += delegate { _app.RequestExit(); };
-            UiLayout.Localize(settingsButton, StringId.ButtonXtensionSettings);
-            UiLayout.Localize(diagnosticsButton, StringId.ButtonDiagnostics);
-            UiLayout.Localize(braveSettingsButton, StringId.ButtonBraveSettings);
-            UiLayout.Localize(logButton, StringId.ButtonOpenLog);
-            UiLayout.Localize(exitButton, StringId.ButtonExit);
-            foreach (Button button in new Button[] { settingsButton, diagnosticsButton, braveSettingsButton, logButton, exitButton })
-            {
-                button.Margin = new Padding(0, 0, 8, 4);
-                actions.Controls.Add(button);
+                TableLayoutPanel header = UiLayout.Stack();
+                header.BackColor = _navy;
+                header.Padding = new Padding(18, 12, 18, 12);
+                UiLayout.Add(header, new WrappingLabel { Text = AppInfo.ProductName, Font = _titleFont, ForeColor = Color.White });
+                UiLayout.Add(header, UiLayout.Localize(new WrappingLabel { ForeColor = Color.FromArgb(203, 213, 225) }, StringId.DashboardTagline));
+                UiLayout.Add(content, header);
+
+                TableLayoutPanel statusCard = UiLayout.Stack();
+                statusCard.BackColor = Color.White;
+                statusCard.Padding = new Padding(14);
+                _badge = new WrappingLabel { Font = _badgeFont, ForeColor = _blue, Text = Strings.Get(StringId.BadgeStarting) };
+                _headline = new WrappingLabel { Font = _headlineFont, ForeColor = _text, Text = Strings.Get(StringId.HeadlineStarting) };
+                Label activeLabel = UiLayout.Localize(new WrappingLabel { ForeColor = _muted }, StringId.LabelActiveTab);
+                // Selectable and horizontally scrollable: a long title is never silently truncated.
+                _tabName = new TextBox { ReadOnly = true, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = Color.White, ForeColor = _text, Text = Strings.Get(StringId.NoConfirmedTab) };
+                UiLayout.Add(statusCard, _badge);
+                UiLayout.Add(statusCard, _headline);
+                UiLayout.Add(statusCard, activeLabel);
+                UiLayout.Add(statusCard, _tabName);
+                UiLayout.Add(content, statusCard);
+
+                FlowLayoutPanel toggleRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Padding = new Padding(0, 9, 0, 4) };
+                _toggleButton = CreateButton(Strings.Get(StringId.ToggleTurnOff), _red, Color.White, 166, 40);
+                _toggleButton.Margin = new Padding(0, 0, 18, 4);
+                _toggleButton.Click += delegate { _app.ToggleOverlayFromDashboard(); };
+                _startupBox = UiLayout.Localize(new WrappingCheckBox { AutoSize = true, Margin = new Padding(2, 12, 0, 4), ForeColor = _text }, StringId.MenuStartup);
+                _startupBox.CheckedChanged += delegate
+                {
+                    if (!_suppressStartupEvent) _app.SetLaunchAtLogin(_startupBox.Checked);
+                };
+                toggleRow.Controls.Add(_toggleButton);
+                toggleRow.Controls.Add(_startupBox);
+                UiLayout.Add(content, toggleRow);
+
+                FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Padding = new Padding(0, 6, 0, 4) };
+                Button settingsButton = CreateButton(Strings.Get(StringId.ButtonXtensionSettings), _blue, Color.White, 152, 38);
+                settingsButton.Click += delegate { _app.ShowSettings(); };
+                Button diagnosticsButton = CreateButton(Strings.Get(StringId.ButtonDiagnostics), Color.FromArgb(226, 232, 240), _text, 126, 38);
+                diagnosticsButton.Click += delegate { _app.ShowDiagnostics(); };
+                Button braveSettingsButton = CreateButton(Strings.Get(StringId.ButtonBraveSettings), Color.FromArgb(226, 232, 240), _text, 126, 38);
+                braveSettingsButton.Click += delegate { _app.OpenBraveAppearanceSettings(); };
+                Button logButton = CreateButton(Strings.Get(StringId.ButtonOpenLog), Color.FromArgb(226, 232, 240), _text, 126, 38);
+                logButton.Click += delegate { _app.OpenLog(); };
+                Button exitButton = CreateButton(Strings.Get(StringId.ButtonExit), Color.FromArgb(254, 226, 226), _red, 132, 38);
+                exitButton.Click += delegate { _app.RequestExit(); };
+                UiLayout.Localize(settingsButton, StringId.ButtonXtensionSettings);
+                UiLayout.Localize(diagnosticsButton, StringId.ButtonDiagnostics);
+                UiLayout.Localize(braveSettingsButton, StringId.ButtonBraveSettings);
+                UiLayout.Localize(logButton, StringId.ButtonOpenLog);
+                UiLayout.Localize(exitButton, StringId.ButtonExit);
+                foreach (Button button in new Button[] { settingsButton, diagnosticsButton, braveSettingsButton, logButton, exitButton })
+                {
+                    button.Margin = new Padding(0, 0, 8, 4);
+                    actions.Controls.Add(button);
+                }
+                UiLayout.Add(content, actions);
             }
-            UiLayout.Add(content, actions);
+            finally
+            {
+                content.ResumeLayout(false);
+                viewport.ResumeLayout(false);
+                ResumeLayout(false);
+                PerformLayout();
+            }
 
             _notice = new WrappingLabel { Padding = new Padding(14, 10, 12, 8), BackColor = Color.White, ForeColor = _muted, Text = Strings.Get(StringId.GeneralNote) };
             UiLayout.Add(content, _notice);
@@ -292,7 +319,7 @@ namespace Xtension
                 Padding = new Padding(10, 6, 10, 6),
                 BackColor = backColor,
                 ForeColor = foreColor,
-                Font = OwnFont(9F, FontStyle.Bold),
+                Font = _buttonFont,
                 FlatStyle = FlatStyle.Flat,
                 Cursor = Cursors.Hand,
                 UseVisualStyleBackColor = false,

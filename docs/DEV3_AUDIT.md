@@ -90,6 +90,30 @@ if the runner is noisy.
 The scan interval and the hover keep-time are exposed as bounded settings, so a user on a slow machine can trade
 responsiveness for CPU explicitly, with a documented minimum of 300 ms.
 
+**Responsiveness, added after the owner reported a noticeable delay.** Three things were making the × and the windows
+feel slow, and each was removed at its cause rather than by loosening a rule:
+
+1. *Arrival in the tab strip.* In hover mode a scan was only submitted when the interval since the previous request had
+   elapsed, so a pointer that arrived just after a scan waited up to a full interval (500 ms by default) before the ×
+   could appear. The pointer gate now runs on every tick and remembers where the pointer is; the transition from outside
+   the strip to inside it clears the interval, so exactly one scan is submitted on that tick. While the pointer stays
+   inside, the loop uses the documented minimum interval (300 ms) instead of the configured one, which is what makes the
+   × follow a tab switch quickly; while the pointer is elsewhere, scanning still stops entirely.
+2. *A newly focused window.* In `always` mode the controller now scans a Brave window immediately when it comes to the
+   front, instead of waiting out an interval that belonged to the previous foreground window.
+3. *Window construction.* The settings window and the dashboard added one control at a time to auto-sizing
+   `TableLayoutPanel`s, so WinForms ran a layout pass per row, and every wrapping label re-measured its text with GDI on
+   every pass; each control also had its own `Font` object, and `FitToWorkingArea` assigned `Size` even when the window
+   already fitted. The trees are now built with layout suspended and laid out once, text measurement is cached per
+   text/width/font and dropped when the text or font changes, the windows share a few fonts by role, and the fit check is
+   a no-op when it has nothing to do.
+
+None of this weakens a safety rule: the arrival rule only decides *when* a scan is submitted, never what a scan must
+prove; the close cooldown (800 ms), the staleness window (1500 ms), the close-validation deadline (3000 ms), the scan
+budget (1000 ms / 1500 nodes) and the epoch rule are untouched, and the click path still re-validates through
+`CloseGuard` with a fresh scan. The cost is bounded and small: one extra scan per pointer arrival and per focus change,
+no extra scan while the pointer is away from the strip.
+
 ## 5. Still not verified
 
 | Surface | Status | Why it is unverified / what would verify it |
