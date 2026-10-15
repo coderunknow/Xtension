@@ -228,7 +228,7 @@ namespace Xtension.Tests
         private static void ConfiguredBehaviour(string bravePath, string candidatePath, string profile)
         {
             const int configuredInset = 5;
-            int configuredSize = AppInfo.MaxButtonSizeLogical;
+            int configuredSize = AppInfo.DefaultButtonSizeLogical;
             string settingsPath = AppPaths.SettingsFile;
             string original = File.Exists(settingsPath) ? File.ReadAllText(settingsPath) : null;
             AppPaths.EnsureDirectory();
@@ -237,9 +237,6 @@ namespace Xtension.Tests
             Process app = null;
             try
             {
-                File.WriteAllText(settingsPath, "overlayEnabled=true\r\nvisibilityMode=hover\r\nbuttonSize=" + configuredSize
-                    + "\r\nbuttonInset=" + configuredInset + "\r\nhoverGraceMs=250\r\nscanIntervalMs=500\r\nlanguage=vi\r\n");
-
                 browser = Process.Start(new ProcessStartInfo(bravePath,
                     "--user-data-dir=\"" + profile + "\" --no-first-run --no-default-browser-check --disable-background-networking " +
                     "--disable-component-update --disable-sync --new-window about:blank about:blank about:blank") { UseShellExecute = false });
@@ -248,6 +245,35 @@ namespace Xtension.Tests
                 ShowWindow(brave, 3);
                 SetForegroundWindow(brave);
                 Wait(delegate { return NativeMethods.GetForegroundRootWindow() == brave; }, 5000, "runner could not foreground Brave for the configured phase");
+
+                // The real tab decides which configured sizes exist. A size it cannot contain is refused by the
+                // product instead of being drawn outside the tab, so the phase configures the largest size that fits
+                // and checks the refusal separately: asserting a visible button for an impossible size would be a
+                // test of the fixture, not of the product.
+                ScanResult probe = null;
+                Wait(delegate
+                {
+                    probe = UiaTabScanner.Scan(brave, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
+                    return probe.Outcome == ScanOutcome.Ready && probe.Tabs.Count == 3;
+                }, 20000, "default-size probe scan did not confirm three tabs");
+                int tabHeight = probe.SelectedHorizontalTab.Bounds.Height;
+                int largest = LargestFittingSize(probe.SelectedHorizontalTab.Bounds, probe.Dpi, configuredInset);
+                if (largest > AppInfo.DefaultButtonSizeLogical) configuredSize = largest;
+                Console.WriteLine("INFO the real selected tab is " + tabHeight + " px tall at dpi " + probe.Dpi
+                    + "; the configured phase uses " + configuredSize + " px with inset " + configuredInset);
+
+                if (TabGeometry.GetOverlayBounds(probe.SelectedHorizontalTab.Bounds, probe.Dpi, AppInfo.MaxButtonSizeLogical, configuredInset).IsEmpty)
+                {
+                    ScanResult refused = UiaTabScanner.Scan(brave, AppInfo.MaxButtonSizeLogical, configuredInset);
+                    Assert.IsTrue(refused.Outcome == ScanOutcome.NoSelectedTab && refused.Key == ScanMessageKey.SelectedTabTooSmall,
+                        "a " + AppInfo.MaxButtonSizeLogical + " px button cannot fit a " + tabHeight + " px tab, so the scan must fail closed with "
+                        + ScanMessageKey.SelectedTabTooSmall + " (got " + refused.Outcome + "/" + refused.Key + ")");
+                    Console.WriteLine("PASS a " + AppInfo.MaxButtonSizeLogical + " px button is refused on the real " + tabHeight
+                        + " px tab (fail closed, " + refused.Key + ")");
+                }
+
+                File.WriteAllText(settingsPath, "overlayEnabled=true\r\nvisibilityMode=hover\r\nbuttonSize=" + configuredSize
+                    + "\r\nbuttonInset=" + configuredInset + "\r\nhoverGraceMs=250\r\nscanIntervalMs=500\r\nlanguage=vi\r\n");
 
                 ScanResult scan = null;
                 Wait(delegate
@@ -365,6 +391,19 @@ namespace Xtension.Tests
                 {
                 }
             }
+        }
+
+        /// <summary>
+        /// Largest configured × size the real tab can contain at this DPI, so the acceptance phase measures a size
+        /// Brave has room for instead of assuming the maximum always fits a 100 % browser tab.
+        /// </summary>
+        private static int LargestFittingSize(Rectangle tab, int dpi, int insetLogical)
+        {
+            for (int size = AppInfo.MaxButtonSizeLogical; size > AppInfo.MinButtonSizeLogical; size--)
+            {
+                if (!TabGeometry.GetOverlayBounds(tab, dpi, size, insetLogical).IsEmpty) return size;
+            }
+            return AppInfo.MinButtonSizeLogical;
         }
 
         private static void CursorTo(Rectangle bounds)

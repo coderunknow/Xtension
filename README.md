@@ -44,6 +44,12 @@ Every option is also available from the tray menu, and every change applies imme
 | Scan interval | 300–2000 ms between UI Automation scans while Brave is in front | 500 ms |
 | Interface language | Tiếng Việt / English | Tiếng Việt |
 
+The whole × square plus its right inset must fit inside the selected tab. If the configured combination cannot, the
+button stays hidden and the dashboard says why ("The selected tab is too small to hold the × button safely at the
+configured size. The × is hidden.") instead of drawing a button outside the tab. The tab height comes from the
+browser: the tab of Brave v1.97.56 on the CI runner cannot hold the 40 px maximum, so the largest sizes apply only
+when the browser gives the tab more room.
+
 Out-of-range or unreadable values are replaced by the documented default rather than being trusted. **Reset to defaults** restores every value above (the start-with-Windows entry is kept as it is, because it lives in the registry).
 
 Settings are stored at `%LOCALAPPDATA%\Xtension\settings.ini` as `key=value` lines. Keys this version does not know are preserved when the file is rewritten. Keyboard shortcuts in the windows: `Esc` closes them, and closing the dashboard keeps Xtension running in the notification area.
@@ -93,7 +99,7 @@ The version comes only from `VERSION`. Edit that file to change it.
 | Unit tests (pure core) | Run in CI. |
 | x86 and x64 builds | Run in CI. Verified in CI; release builds are produced by the tag workflow. |
 | Windows UIA fixture / scaled-font layout | Run in CI in both architectures; not real-browser or physical-monitor validation. Includes settings-window layout at 100/125/150/200% text scaling, the language toggle, overlay resize and a delivered Ctrl+W chord. |
-| Real Brave smoke | **Passed** with v1.97.56 for dev2; the dev3 candidate adds hover mode, the configured 40 px button, settings persistence across a restart and corrupted-settings recovery in the same job. |
+| Real Brave smoke | **Passed** with v1.97.56 for dev2. The dev3 job tests hover mode, the largest configured × size the real tab can contain, the documented fail-closed refusal of a size that cannot fit, settings persistence across a restart and corrupted-settings recovery. |
 | Published dev2 vs candidate resources | One CI job measures both EXEs on the same runner and records startup time, idle CPU, working set, handles and UI Automation scan cost in `performance.txt`. |
 | Full desktop acceptance | **Incomplete.** Physical DPI/multiple monitors, rapid-click race stress, tray/startup/graceful exit and unsupported arrangements still need manual coverage. |
 

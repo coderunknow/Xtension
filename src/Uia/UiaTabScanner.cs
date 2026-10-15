@@ -8,8 +8,9 @@ namespace Xtension
     /// <summary>
     /// Bounded, read-only UI Automation walk of a Brave window. Must run on a worker thread, never on the UI thread.
     /// It reads TabItem elements and never descends into a tab, page content (Document) or text input (Edit).
-    /// Properties are prefetched using an explicit CacheRequest on every navigation operation, and that request is
-    /// disposed with the scan so repeated scans cannot accumulate unmanaged automation objects.
+    /// Properties are prefetched through an explicit CacheRequest on every navigation operation; the request is
+    /// created and released inside the scan (only the activation returned by Activate() is disposable in
+    /// .NET Framework 4.8) so repeated scans cannot accumulate automation objects.
     /// </summary>
     internal static class UiaTabScanner
     {
