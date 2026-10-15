@@ -7,11 +7,6 @@ namespace Xtension
     /// <summary>Dashboard window. It renders snapshots only; all decisions live in ActiveTabController.</summary>
     internal sealed class MainForm : Form
     {
-        private const string GeneralNote =
-            "Xtension không thay đổi cài đặt của Brave. Nếu Brave có tùy chọn ẩn nút đóng tab trong Cài đặt → Giao diện, " +
-            "hãy bật tùy chọn đó để giảm nhầm với nút đóng gốc. Nếu tắt nút × hoặc thoát ứng dụng, nút đóng gốc của Brave " +
-            "có thể vẫn bị ẩn cho đến khi bạn đổi lại tùy chọn đó trong Brave.";
-
         private readonly System.Collections.Generic.List<Font> _fonts = new System.Collections.Generic.List<Font>();
         private readonly TrayAppContext _app;
         private readonly Label _badge;
@@ -27,10 +22,31 @@ namespace Xtension
         private readonly Color _red = Color.FromArgb(185, 28, 28);
         private readonly Color _text = Color.FromArgb(31, 41, 55);
         private readonly Color _muted = Color.FromArgb(100, 116, 139);
-        private string _renderSignature = string.Empty;
+        // Shared fonts instead of a new Font object per control, for the same reason as the settings window: fewer
+        // GDI objects to create and dispose, and one object per role, so the window scales as a unit.
+        private readonly Font _bodyFont;
+        private readonly Font _badgeFont;
+        private readonly Font _headlineFont;
+        private readonly Font _titleFont;
+        private readonly Font _buttonFont;
         private bool _suppressStartupEvent;
         private bool _allowClose;
         private bool _closeTipShown;
+
+        // Last rendered state. Comparing these fields costs nothing and replaces building a signature string
+        // for every notification, which is the common case on a timer tick.
+        private bool _haveRendered;
+        private bool _lastEnabled;
+        private bool _lastVisible;
+        private bool _lastBrave;
+        private bool _lastStalled;
+        private OverlayVisibilityMode _lastMode;
+        private ScanOutcome _lastOutcome;
+        private string _lastIdle = string.Empty;
+        private string _lastNotice = string.Empty;
+        private string _lastHidden = string.Empty;
+        private string _lastScanMessage = string.Empty;
+        private string _lastTabName = string.Empty;
 
         public MainForm(TrayAppContext app)
         {
@@ -43,7 +59,12 @@ namespace Xtension
             MinimizeBox = true;
             ShowInTaskbar = true;
             BackColor = Color.FromArgb(243, 246, 250);
-            Font = OwnFont(9F, FontStyle.Regular);
+            _bodyFont = OwnFont(9F, FontStyle.Regular);
+            _badgeFont = OwnFont(9F, FontStyle.Bold);
+            _headlineFont = OwnFont(13F, FontStyle.Bold);
+            _titleFont = OwnFont(17F, FontStyle.Bold);
+            _buttonFont = OwnFont(9F, FontStyle.Bold);
+            Font = _bodyFont;
             AutoScaleMode = AutoScaleMode.Font;
             KeyPreview = true;
 
@@ -52,60 +73,82 @@ namespace Xtension
             content.Padding = new Padding(18, 16, 18, 14);
             viewport.Controls.Add(content);
             Controls.Add(viewport);
-
-            TableLayoutPanel header = UiLayout.Stack();
-            header.BackColor = _navy;
-            header.Padding = new Padding(18, 12, 18, 12);
-            UiLayout.Add(header, new WrappingLabel { Text = AppInfo.ProductName, Font = OwnFont(17F, FontStyle.Bold), ForeColor = Color.White });
-            UiLayout.Add(header, new WrappingLabel { Text = "Chỉ hiện nút đóng trên tab Brave đang được chọn", ForeColor = Color.FromArgb(203, 213, 225) });
-            UiLayout.Add(content, header);
-
-            TableLayoutPanel statusCard = UiLayout.Stack();
-            statusCard.BackColor = Color.White;
-            statusCard.Padding = new Padding(14);
-            _badge = new WrappingLabel { Font = OwnFont(9F, FontStyle.Bold), ForeColor = _blue, Text = "●  ĐANG KHỞI ĐỘNG" };
-            _headline = new WrappingLabel { Font = OwnFont(13F, FontStyle.Bold), ForeColor = _text, Text = "Đang kiểm tra tab Brave…" };
-            Label activeLabel = new WrappingLabel { Text = "TAB ĐƯỢC NHẬN DIỆN", ForeColor = _muted };
-            // Selectable and horizontally scrollable: a long title is never silently truncated.
-            _tabName = new TextBox { ReadOnly = true, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = Color.White, ForeColor = _text, Text = "Chưa có tab được xác nhận" };
-            UiLayout.Add(statusCard, _badge);
-            UiLayout.Add(statusCard, _headline);
-            UiLayout.Add(statusCard, activeLabel);
-            UiLayout.Add(statusCard, _tabName);
-            UiLayout.Add(content, statusCard);
-
-            FlowLayoutPanel toggleRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Padding = new Padding(0, 9, 0, 4) };
-            _toggleButton = CreateButton("Tắt nút ×", _red, Color.White, 166, 40);
-            _toggleButton.Margin = new Padding(0, 0, 18, 4);
-            _toggleButton.Click += delegate { _app.ToggleOverlayFromDashboard(); };
-            _startupBox = new WrappingCheckBox { Text = "Khởi chạy cùng Windows", AutoSize = true, Margin = new Padding(2, 12, 0, 4), ForeColor = _text };
-            _startupBox.CheckedChanged += delegate
+            // Build the tree with layout suspended and lay it out once, so the window does not run a layout pass
+            // for every row that is added to it (see SettingsForm, which does the same).
+            SuspendLayout();
+            viewport.SuspendLayout();
+            content.SuspendLayout();
+            try
             {
-                if (!_suppressStartupEvent) _app.SetLaunchAtLogin(_startupBox.Checked);
-            };
-            toggleRow.Controls.Add(_toggleButton);
-            toggleRow.Controls.Add(_startupBox);
-            UiLayout.Add(content, toggleRow);
 
-            FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Padding = new Padding(0, 6, 0, 4) };
-            Button diagnosticsButton = CreateButton("Chẩn đoán", Color.FromArgb(226, 232, 240), _text, 126, 38);
-            diagnosticsButton.Click += delegate { _app.ShowDiagnostics(); };
-            Button settingsButton = CreateButton("Cài đặt Brave", Color.FromArgb(226, 232, 240), _text, 126, 38);
-            settingsButton.Click += delegate { _app.OpenBraveAppearanceSettings(); };
-            Button logButton = CreateButton("Mở nhật ký", Color.FromArgb(226, 232, 240), _text, 126, 38);
-            logButton.Click += delegate { _app.OpenLog(); };
-            Button exitButton = CreateButton("Thoát ứng dụng", Color.FromArgb(254, 226, 226), _red, 132, 38);
-            exitButton.Click += delegate { _app.RequestExit(); };
-            foreach (Button button in new Button[] { diagnosticsButton, settingsButton, logButton, exitButton })
-            {
-                button.Margin = new Padding(0, 0, 8, 4);
-                actions.Controls.Add(button);
+                TableLayoutPanel header = UiLayout.Stack();
+                header.BackColor = _navy;
+                header.Padding = new Padding(18, 12, 18, 12);
+                UiLayout.Add(header, new WrappingLabel { Text = AppInfo.ProductName, Font = _titleFont, ForeColor = Color.White });
+                UiLayout.Add(header, UiLayout.Localize(new WrappingLabel { ForeColor = Color.FromArgb(203, 213, 225) }, StringId.DashboardTagline));
+                UiLayout.Add(content, header);
+
+                TableLayoutPanel statusCard = UiLayout.Stack();
+                statusCard.BackColor = Color.White;
+                statusCard.Padding = new Padding(14);
+                _badge = new WrappingLabel { Font = _badgeFont, ForeColor = _blue, Text = Strings.Get(StringId.BadgeStarting) };
+                _headline = new WrappingLabel { Font = _headlineFont, ForeColor = _text, Text = Strings.Get(StringId.HeadlineStarting) };
+                Label activeLabel = UiLayout.Localize(new WrappingLabel { ForeColor = _muted }, StringId.LabelActiveTab);
+                // Selectable and horizontally scrollable: a long title is never silently truncated.
+                _tabName = new TextBox { ReadOnly = true, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = Color.White, ForeColor = _text, Text = Strings.Get(StringId.NoConfirmedTab) };
+                UiLayout.Add(statusCard, _badge);
+                UiLayout.Add(statusCard, _headline);
+                UiLayout.Add(statusCard, activeLabel);
+                UiLayout.Add(statusCard, _tabName);
+                UiLayout.Add(content, statusCard);
+
+                FlowLayoutPanel toggleRow = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Padding = new Padding(0, 9, 0, 4) };
+                _toggleButton = CreateButton(Strings.Get(StringId.ToggleTurnOff), _red, Color.White, 166, 40);
+                _toggleButton.Margin = new Padding(0, 0, 18, 4);
+                _toggleButton.Click += delegate { _app.ToggleOverlayFromDashboard(); };
+                _startupBox = UiLayout.Localize(new WrappingCheckBox { AutoSize = true, Margin = new Padding(2, 12, 0, 4), ForeColor = _text }, StringId.MenuStartup);
+                _startupBox.CheckedChanged += delegate
+                {
+                    if (!_suppressStartupEvent) _app.SetLaunchAtLogin(_startupBox.Checked);
+                };
+                toggleRow.Controls.Add(_toggleButton);
+                toggleRow.Controls.Add(_startupBox);
+                UiLayout.Add(content, toggleRow);
+
+                FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Padding = new Padding(0, 6, 0, 4) };
+                Button settingsButton = CreateButton(Strings.Get(StringId.ButtonXtensionSettings), _blue, Color.White, 152, 38);
+                settingsButton.Click += delegate { _app.ShowSettings(); };
+                Button diagnosticsButton = CreateButton(Strings.Get(StringId.ButtonDiagnostics), Color.FromArgb(226, 232, 240), _text, 126, 38);
+                diagnosticsButton.Click += delegate { _app.ShowDiagnostics(); };
+                Button braveSettingsButton = CreateButton(Strings.Get(StringId.ButtonBraveSettings), Color.FromArgb(226, 232, 240), _text, 126, 38);
+                braveSettingsButton.Click += delegate { _app.OpenBraveAppearanceSettings(); };
+                Button logButton = CreateButton(Strings.Get(StringId.ButtonOpenLog), Color.FromArgb(226, 232, 240), _text, 126, 38);
+                logButton.Click += delegate { _app.OpenLog(); };
+                Button exitButton = CreateButton(Strings.Get(StringId.ButtonExit), Color.FromArgb(254, 226, 226), _red, 132, 38);
+                exitButton.Click += delegate { _app.RequestExit(); };
+                UiLayout.Localize(settingsButton, StringId.ButtonXtensionSettings);
+                UiLayout.Localize(diagnosticsButton, StringId.ButtonDiagnostics);
+                UiLayout.Localize(braveSettingsButton, StringId.ButtonBraveSettings);
+                UiLayout.Localize(logButton, StringId.ButtonOpenLog);
+                UiLayout.Localize(exitButton, StringId.ButtonExit);
+                foreach (Button button in new Button[] { settingsButton, diagnosticsButton, braveSettingsButton, logButton, exitButton })
+                {
+                    button.Margin = new Padding(0, 0, 8, 4);
+                    actions.Controls.Add(button);
+                }
+                UiLayout.Add(content, actions);
             }
-            UiLayout.Add(content, actions);
+            finally
+            {
+                content.ResumeLayout(false);
+                viewport.ResumeLayout(false);
+                ResumeLayout(false);
+                PerformLayout();
+            }
 
-            _notice = new WrappingLabel { Padding = new Padding(14, 10, 12, 8), BackColor = Color.White, ForeColor = _muted, Text = GeneralNote };
+            _notice = new WrappingLabel { Padding = new Padding(14, 10, 12, 8), BackColor = Color.White, ForeColor = _muted, Text = Strings.Get(StringId.GeneralNote) };
             UiLayout.Add(content, _notice);
-            _footer = new WrappingLabel { Padding = new Padding(0, 10, 0, 0), ForeColor = _muted, Text = "Phiên bản " + AppInfo.DisplayVersion + " · Đóng cửa sổ này sẽ thu nhỏ ứng dụng xuống khay hệ thống." };
+            _footer = UiLayout.Localize(new WrappingLabel { Padding = new Padding(0, 10, 0, 0), ForeColor = _muted }, StringId.Footer, AppInfo.DisplayVersion);
             UiLayout.Add(content, _footer);
             Shown += delegate { UiLayout.FitToWorkingArea(this); };
 
@@ -114,10 +157,22 @@ namespace Xtension
             {
                 if (e.KeyCode == Keys.Escape)
                 {
-                    Hide();
                     e.Handled = true;
+                    Hide();
                 }
             };
+        }
+
+        /// <summary>Drops the render cache so the next snapshot is drawn again. Used after a language change.</summary>
+        public void ResetRenderCache()
+        {
+            _haveRendered = false;
+            _badge.Text = Strings.Get(StringId.BadgeStarting);
+            _headline.Text = Strings.Get(StringId.HeadlineStarting);
+            _tabName.Text = Strings.Get(StringId.NoConfirmedTab);
+            _notice.Text = Strings.Get(StringId.GeneralNote);
+            _toggleButton.Text = Strings.Get(StringId.ToggleTurnOff);
+            UiLayout.ApplyLanguage(this);
         }
 
         /// <summary>Redraws only when the displayed content changed, so periodic updates cost almost nothing.</summary>
@@ -127,76 +182,88 @@ namespace Xtension
             ScanResult scan = snapshot.Scan;
             bool ready = scan != null && scan.Outcome == ScanOutcome.Ready && scan.SelectedHorizontalTab != null;
             string tabName = ready ? scan.SelectedHorizontalTab.Name : string.Empty;
-            string signature = string.Join("|", new string[]
-            {
-                snapshot.Enabled ? "on" : "off",
-                snapshot.OverlayVisible ? "shown" : "hidden",
-                snapshot.BraveInForeground ? "brave" : "other",
-                snapshot.Stalled ? "stalled" : "ok",
-                snapshot.IdleReason,
-                snapshot.Notice,
-                snapshot.HiddenReason,
-                scan == null ? "none" : scan.Outcome.ToString(),
-                scan == null ? string.Empty : scan.Message,
-                tabName
-            });
-            if (signature == _renderSignature) return;
-            _renderSignature = signature;
+            string scanMessage = scan == null ? string.Empty : scan.Message;
+
+            if (_haveRendered
+                && _lastEnabled == snapshot.Enabled
+                && _lastVisible == snapshot.OverlayVisible
+                && _lastBrave == snapshot.BraveInForeground
+                && _lastStalled == snapshot.Stalled
+                && _lastMode == snapshot.VisibilityMode
+                && _lastOutcome == (scan == null ? ScanOutcome.Idle : scan.Outcome)
+                && _lastIdle == snapshot.IdleReason
+                && _lastNotice == snapshot.Notice
+                && _lastHidden == snapshot.HiddenReason
+                && _lastScanMessage == scanMessage
+                && _lastTabName == tabName) return;
+
+            _haveRendered = true;
+            _lastEnabled = snapshot.Enabled;
+            _lastVisible = snapshot.OverlayVisible;
+            _lastBrave = snapshot.BraveInForeground;
+            _lastStalled = snapshot.Stalled;
+            _lastMode = snapshot.VisibilityMode;
+            _lastOutcome = scan == null ? ScanOutcome.Idle : scan.Outcome;
+            _lastIdle = snapshot.IdleReason;
+            _lastNotice = snapshot.Notice;
+            _lastHidden = snapshot.HiddenReason;
+            _lastScanMessage = scanMessage;
+            _lastTabName = tabName;
 
             string detail;
             if (!snapshot.Enabled)
             {
-                _badge.Text = "●  NÚT × ĐANG TẮT";
+                _badge.Text = Strings.Get(StringId.BadgeDisabled);
                 _badge.ForeColor = _red;
-                _headline.Text = "Nút × tùy chỉnh đang tắt";
-                detail = "Xtension không hiện nút × và không gửi lệnh đóng tab.";
+                _headline.Text = Strings.Get(StringId.HeadlineDisabled);
+                detail = Strings.Get(StringId.DetailDisabled);
             }
             else if (snapshot.Stalled)
             {
-                _badge.Text = "●  UIA KHÔNG PHẢN HỒI";
+                _badge.Text = Strings.Get(StringId.BadgeStalled);
                 _badge.ForeColor = _red;
-                _headline.Text = "Brave chưa phản hồi trợ năng";
-                detail = "Nút × được ẩn cho đến khi Brave phản hồi. Xtension không đóng tab khi chưa xác nhận được.";
+                _headline.Text = Strings.Get(StringId.HeadlineStalled);
+                detail = Strings.Get(StringId.DetailStalled);
             }
             else if (snapshot.OverlayVisible)
             {
-                _badge.Text = "●  ĐANG HOẠT ĐỘNG";
+                _badge.Text = Strings.Get(StringId.BadgeActive);
                 _badge.ForeColor = _green;
-                _headline.Text = "Nút × đang gắn với tab được chọn";
-                detail = "Nút × chỉ đóng tab đang được chọn sau khi được xác nhận lại ngay trước khi nhấp.";
+                _headline.Text = Strings.Get(StringId.HeadlineActive);
+                detail = Strings.Get(StringId.DetailActive);
             }
             else if (!snapshot.BraveInForeground)
             {
-                _badge.Text = "●  CHỜ BRAVE";
+                _badge.Text = Strings.Get(StringId.BadgeWaitingBrave);
                 _badge.ForeColor = _muted;
-                _headline.Text = "Mở Brave để bắt đầu";
+                _headline.Text = Strings.Get(StringId.HeadlineWaitingBrave);
                 detail = snapshot.IdleReason;
             }
             else if (ready)
             {
-                _badge.Text = "●  SẴN SÀNG";
+                _badge.Text = Strings.Get(StringId.BadgeReady);
                 _badge.ForeColor = _blue;
-                _headline.Text = "Nút × đang ẩn";
+                _headline.Text = Strings.Get(StringId.HeadlineReady);
                 detail = snapshot.HiddenReason;
             }
             else
             {
-                _badge.Text = "●  CHƯA NHẬN DIỆN";
+                _badge.Text = Strings.Get(StringId.BadgeUnknown);
                 _badge.ForeColor = _muted;
-                _headline.Text = "Chưa xác nhận được tab đang chọn";
-                detail = scan == null ? "Đang chờ kết quả quét đầu tiên." : scan.Message;
+                _headline.Text = Strings.Get(StringId.HeadlineUnknown);
+                detail = scan == null ? Strings.Get(StringId.DetailWaitingFirstScan) : scan.Message;
             }
 
             _tabName.Text = ready
-                ? (string.IsNullOrEmpty(tabName) ? "(tab không có tiêu đề)" : tabName)
-                : "Chưa có tab được xác nhận";
+                ? (string.IsNullOrEmpty(tabName) ? Strings.Get(StringId.UntitledTab) : tabName)
+                : Strings.Get(StringId.NoConfirmedTab);
 
             if (!snapshot.OverlayVisible && !string.IsNullOrEmpty(snapshot.HiddenReason)) detail = snapshot.HiddenReason;
-            string notice = detail + "\r\n" + GeneralNote;
+            string notice = detail + "\r\n" + Strings.Get(StringId.GeneralNote);
             if (!string.IsNullOrEmpty(snapshot.Notice)) notice = snapshot.Notice + "\r\n" + notice;
             _notice.Text = notice;
 
-            _toggleButton.Text = snapshot.Enabled ? "Tắt nút ×" : "Bật nút ×";
+            _toggleButton.Text = snapshot.Enabled ? Strings.Get(StringId.ToggleTurnOff) : Strings.Get(StringId.ToggleTurnOn);
             _toggleButton.BackColor = snapshot.Enabled ? _red : _green;
             _toggleButton.FlatAppearance.MouseOverBackColor = ControlPaint.Light(_toggleButton.BackColor, 0.08F);
             _toggleButton.FlatAppearance.MouseDownBackColor = ControlPaint.Dark(_toggleButton.BackColor, 0.06F);
@@ -224,7 +291,7 @@ namespace Xtension
             if (!_closeTipShown)
             {
                 _closeTipShown = true;
-                _app.ShowTrayTip("Ứng dụng vẫn đang chạy", "Xtension đã thu nhỏ xuống khay hệ thống. Nhấp biểu tượng gần đồng hồ để mở lại.");
+                _app.ShowTrayTip(Strings.Get(StringId.TrayTipMinimizedTitle), Strings.Get(StringId.TrayTipMinimizedBody));
             }
         }
 
@@ -252,7 +319,7 @@ namespace Xtension
                 Padding = new Padding(10, 6, 10, 6),
                 BackColor = backColor,
                 ForeColor = foreColor,
-                Font = OwnFont(9F, FontStyle.Bold),
+                Font = _buttonFont,
                 FlatStyle = FlatStyle.Flat,
                 Cursor = Cursors.Hand,
                 UseVisualStyleBackColor = false,

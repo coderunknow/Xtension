@@ -27,8 +27,21 @@ namespace Xtension
         }
         #pragma warning restore 0649
 
+        #pragma warning disable 0649 // POINT is filled by GetCursorPos.
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct POINT
+        {
+            public int X;
+            public int Y;
+        }
+        #pragma warning restore 0649
+
         [DllImport("user32.dll")]
         internal static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetCursorPos(out POINT point);
 
         [DllImport("user32.dll")]
         internal static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
@@ -109,6 +122,22 @@ namespace Xtension
             if (foreground == IntPtr.Zero) return IntPtr.Zero;
             IntPtr root = GetAncestor(foreground, GA_ROOT);
             return root == IntPtr.Zero ? foreground : root;
+        }
+
+        /// <summary>
+        /// Current pointer position in physical screen pixels. Returns false when the position is unavailable,
+        /// so callers never treat an unknown position as a real coordinate.
+        /// </summary>
+        public static bool TryGetPointerPosition(out Point point)
+        {
+            POINT value;
+            if (!GetCursorPos(out value))
+            {
+                point = Point.Empty;
+                return false;
+            }
+            point = new Point(value.X, value.Y);
+            return true;
         }
 
         public static Rectangle GetWindowBounds(IntPtr hwnd)

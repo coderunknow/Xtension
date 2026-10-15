@@ -2,6 +2,55 @@
 
 All notable changes are listed here. Versions follow SemVer. The version in `VERSION` is the single source.
 
+## [0.1.0-dev3] - 2026-10-15
+
+Prerelease. Windows x86/x64, .NET Framework 4.8, C# 5. No dependency added. No published tag or asset was replaced.
+
+### Added
+
+- **Settings window** (dashboard, tray menu, or `Settings ...`): turn the × on/off, choose the visibility mode, set the × size and right inset, set the hover keep-time and the scan interval, switch the interface language, set start-with-Windows, reset to defaults, open diagnostics or the log.
+- **Hover mode** (`visibilityMode=hover`): the × is shown only while the pointer is over the confirmed selected tab (or on the button itself), with a bounded keep-time (default 250 ms) so moving from the tab onto the button does not make it vanish. Inactive tabs, the title bar, the page area, the taskbar and other applications never qualify.
+- **Configurable × size and position**: 18–40 logical pixels (default 26) and a 0–12 logical pixel right inset (default 3). Painting, window placement, hit testing and close validation all use the same configured values. A size whose square plus the inset cannot fit inside the selected tab hides the button and reports that the tab is too small for it, rather than drawing a button outside the tab.
+- **Interface language toggle**: Vietnamese (default) and English. Every user-visible string moved into one table; changing the language relabels the settings window, dashboard, tray menu and overlay in place, and re-renders the explanation of the last scan without waiting for a new scan.
+- Own settings file at `%LOCALAPPDATA%\Xtension\settings.ini` with the keys `overlayEnabled`, `visibilityMode`, `buttonSize`, `buttonInset`, `hoverGraceMs`, `scanIntervalMs`, `language`. Unknown keys are preserved. Start-with-Windows stays a per-user registry entry and is not duplicated into the file.
+- `docs/DEV3_AUDIT.md`: findings with severity, what was fixed, and the remaining unverified risks.
+- A Windows performance job that measures the published dev2 EXE and the candidate EXE in one job on the same runner (startup time, idle CPU, working set, handles, UI Automation scan cost).
+
+### Fixed
+
+- `SettingsStore` re-read and re-parsed the file on every getter call; it now caches values in memory, bounds the file size it will load, clamps out-of-range integers and unknown enum tokens to documented defaults, preserves unknown keys when rewriting, and removes a stray `settings.ini.tmp` after a failed replacement that previously survived forever.
+- The overlay performed `SetWindowPos`, a bounds read and a repaint on every scan even when nothing moved. Placement is now idempotent and only repaints when the size changes, while still verifying the native bounds and visibility whenever it does move the window.
+- A non-Brave foreground re-opened a process handle on every 250 ms tick; negative verdicts are now cached per window and process id (shorter lifetime), while the path that sends Ctrl+W always re-queries.
+- The audit suspected each scan leaked its `CacheRequest`. The compiler refuted that: in .NET Framework 4.8 `System.Windows.Automation.CacheRequest` has no `Dispose`, and the disposable activation object was already released by the existing `using` block. The scope of the investigation and its conclusion are recorded in `docs/DEV3_AUDIT.md`; no change was needed beyond not adding an impossible call.
+- The controller built a snapshot and pushed a render on every timer tick even when nothing observable had changed.
+- The dev2 wording edge case where a minimized non-Brave window was described as "Brave minimized" is corrected; the wording now requires a Brave identity.
+- In hover mode, UI Automation work is skipped while the pointer cannot be inside the tab strip. This can only delay showing the × by one interval and can never authorise a close.
+
+### Performance
+
+- **The × no longer waits out the scan interval.** In `hover` mode the moment the pointer enters the tab strip forces the
+  next scan to run on that tick, and while the pointer is inside the strip the loop runs at the documented minimum
+  interval instead of the configured one; in `always` mode a window that newly comes to the front is scanned immediately.
+  The steady-state cadence, every deadline, the staleness window and every confirmation rule are unchanged, and no extra
+  scan is submitted while the pointer is away from the tab strip.
+- **Windows open faster.** The settings window and the dashboard add their whole control tree with layout suspended and
+  lay it out once, each wrapping label measures its text once per text/width/font instead of once per layout pass, and
+  both windows share a small set of fonts instead of creating one `Font` per control. `FitToWorkingArea` no longer
+  resizes, relocates and relayouts a window that already fits the working area.
+
+### Safety
+
+- The close path is unchanged: a click still only sends Ctrl+W after a fresh scan of the current foreground Brave window confirms the click landed on the × of the one selected horizontal tab, blocking modifiers are not held, and the foreground window is re-read immediately before injection.
+- Every geometry, mode, language and interval change invalidates pending confirmation, so a queued validation can never be applied to a differently sized or differently placed button.
+- A value that arrives from a corrupted file, a hostile caller or the registry is clamped to its documented range and never trusted, and the settings window repairs out-of-range values instead of crashing.
+
+### Regression coverage and verification
+
+- Core tests extended: settings persistence (round trip, clamping, malformed values, unknown keys, oversized file, failed replacement, reset), parameterised geometry, hover state machine (enter, leave, grace boundary, tab switch, ineligible state, clock going backwards), string-table completeness in both languages, and close-area follow-up of the configured size.
+- Windows synthetic tests extended: overlay resize and idempotent placement, settings-window layout at 100/125/150/200% font scaling, language toggle relabelling in place, host round trip with out-of-range values, and a real Ctrl+W chord sent to a throwaway window that must be delivered in full and leave no key down.
+- Real-Brave acceptance extended with a second phase: hover mode visibility and hiding, the configured 40 px button, a click on a hover-shown button closing exactly one tab, persistence across an application restart while Brave stays open, and recovery from a corrupted settings file.
+- Verification status for this candidate is recorded with its CI run and tag below.
+
 ## [0.1.0-dev2] - 2026-10-14
 
 Prerelease. Windows x86/x64, .NET Framework 4.8, C# 5. No dependency added.

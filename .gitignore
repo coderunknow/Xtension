@@ -27,3 +27,7 @@ settings.ini
 # OS and editor
 Thumbs.db
 .DS_Store
+
+# Local development helpers under tools/ may create Python bytecode caches.
+__pycache__/
+*.pyc

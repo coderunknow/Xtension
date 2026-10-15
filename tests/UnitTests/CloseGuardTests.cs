@@ -21,10 +21,53 @@ namespace Xtension.Tests
             return scan;
         }
 
+
+        [Test]
+        public static void ClickAreaFollowsConfiguredButtonSize()
+        {
+            // A taller tab so both the minimum and the maximum button fit inside it.
+            Rectangle tallTab = new Rectangle(100, 8, 220, 44);
+            Rectangle small = TabGeometry.GetOverlayBounds(tallTab, 96, AppInfo.MinButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
+            Rectangle large = TabGeometry.GetOverlayBounds(tallTab, 96, AppInfo.MaxButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
+            Assert.IsFalse(small.IsEmpty, "minimum size fits the fixture tab");
+            Assert.IsFalse(large.IsEmpty, "maximum size fits the fixture tab");
+            Assert.IsTrue(large.Left < small.Left, "a larger button starts further left");
+            Point largeOnly = new Point(large.Left + 1, large.Top + large.Height / 2);
+            Assert.IsFalse(small.Contains(largeOnly), "fixture point is outside the minimum-size button");
+
+            CloseRequest defaultSize = ValidRequest();
+            defaultSize.Scan.SelectedHorizontalTab.Bounds = tallTab;
+            defaultSize.Scan.Tabs[0].Bounds = tallTab;
+            defaultSize.Click = largeOnly;
+            Assert.IsFalse(CloseGuard.Evaluate(defaultSize).Allowed, "click outside the configured minimum-size button must reject");
+
+            CloseRequest maximumSize = ValidRequest();
+            maximumSize.Scan.SelectedHorizontalTab.Bounds = tallTab;
+            maximumSize.Scan.Tabs[0].Bounds = tallTab;
+            maximumSize.OverlaySizeLogical = AppInfo.MaxButtonSizeLogical;
+            maximumSize.Click = largeOnly;
+            Assert.IsTrue(CloseGuard.Evaluate(maximumSize).Allowed, "the same click must be accepted with the configured maximum size");
+        }
+
+        [Test]
+        public static void OutOfRangeConfiguredSizeIsClampedNotTrusted()
+        {
+            Rectangle tallTab = new Rectangle(100, 8, 220, 44);
+            CloseRequest request = ValidRequest();
+            request.Scan.SelectedHorizontalTab.Bounds = tallTab;
+            request.Scan.Tabs[0].Bounds = tallTab;
+            request.OverlaySizeLogical = 10000;
+            request.OverlayInsetLogical = -5;
+            Rectangle clamped = TabGeometry.GetOverlayBounds(tallTab, 96, request.OverlaySizeLogical, request.OverlayInsetLogical);
+            Assert.IsFalse(clamped.IsEmpty, "clamped geometry must still fit a normal tab");
+            request.Click = new Point(clamped.Left + clamped.Width / 2, clamped.Top + clamped.Height / 2);
+            Assert.IsTrue(CloseGuard.Evaluate(request).Allowed, "clamped geometry is used consistently for validation");
+        }
+
         private static CloseRequest ValidRequest()
         {
             ScanResult scan = ReadyScan();
-            Rectangle close = TabGeometry.GetOverlayBounds(Tab, 96);
+            Rectangle close = TabGeometry.GetOverlayBounds(Tab, 96, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
             return new CloseRequest
             {
                 OverlayEnabled = true,
@@ -65,7 +108,7 @@ namespace Xtension.Tests
         public static void RightAndBottomEdgesAreOutsideCloseArea()
         {
             CloseRequest request = ValidRequest();
-            Rectangle area = TabGeometry.GetOverlayBounds(Tab, 96);
+            Rectangle area = TabGeometry.GetOverlayBounds(Tab, 96, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
             request.Click = new Point(area.Right, area.Top);
             Assert.IsFalse(CloseGuard.Evaluate(request).Allowed, "right edge excluded");
             request.Click = new Point(area.Left, area.Bottom);

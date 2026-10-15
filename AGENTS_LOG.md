@@ -128,3 +128,187 @@ Rules: append new dated entries at the bottom. Do not rewrite or delete earlier 
 - The resumed workspace had baseline Git metadata with the completed work restored as files. Fetched the existing remote session branch, verified every working file's Git-normalized blob exactly matches the published PR head, and restored only branch/index metadata with soft/mixed reset. No working file was overwritten, user change discarded, branch switched, or remote history rewritten.
 - Confirmed dev2 remains a published prerelease with four unchanged asset digests. Added this authorization record and clarified the audit's historical open-PR language; no application, test, version, packaging or release-workflow behavior changes.
 - Next gates: CI on this documentation commit, explicit normal merge of PR #2 with a matching-head guard, then observed main CI. The final merge SHA and main CI outcome will be recorded on PR #2 and in the handoff, not claimed in advance here. All existing acceptance gaps remain documented.
+
+## 2026-10-15 — dev3 reconnaissance and checkpoint 1
+
+- Baseline verified before any edit: `git status` clean on `arena/8c38d759-xtension` (branched from `main` tip `5917ded`, the merge commit of PR #2); remote heads fetched; tags `v0.1.0-dev1` and `v0.1.0-dev2` present; `gh release list` shows both as prereleases; no open PR; `VERSION` was `0.1.0-dev2`. Dev2's published assets were not touched.
+- Read before editing: `AGENTS.md`, both append-only logs, `CHANGELOG.md`, `README.md`, `VERSION`, `docs/DEV2_AUDIT.md`, `docs/RELEASE_CAPABILITIES.md`, `Xtension.csproj`, `app.manifest.template`, all nine PowerShell scripts, both workflows, all 26 source files and all 8 test files. No dev2 correction was reverted.
+- Local environment: Linux sandbox, no csc/mono/msbuild/PowerShell, so nothing here can compile or run the tests. Available local gates used for this session: a tree-sitter C# syntax parse of every `.cs` file (0 errors on the untouched tree) and a Python mirror of `scripts/verify-source.ps1` plus the new localisation/discipline rules. All real compilation, unit tests, synthetic Windows tests and real-Brave runs happen only in GitHub Windows CI and will be reported from actual results.
+- Audit findings carried into this session (details and severities in `docs/DEV3_AUDIT.md`): `SettingsStore` re-reads and re-parses the file on every getter call, loads an unbounded file into memory, drops unknown keys on rewrite and can leave `settings.ini.tmp` behind after a failed replacement; `CloseButtonOverlay.ShowAt` performs `SetWindowPos` + `GetWindowBounds` + `Invalidate` on every scan even when bounds are unchanged; `ProcessIdentity` never caches negative verdicts, so a non-Brave foreground re-opens a process handle every tick; `UiaTabScanner` never disposes the per-scan `CacheRequest`; the controller allocates a snapshot and pushes a render on every timer tick even when nothing observable changed; the dev2 "Brave minimized" wording edge case (message chosen from `minimized` without testing `isBrave`) is still present; there is no typed settings API, no Settings window, no visibility mode and no configurable button size.
+- Implemented so far in this checkpoint: design-log entry 013 (request, decisions, trade-offs) and this work-log entry. Next concrete action: write the Core layer (`Strings`, `AppSettings`, hardened `SettingsStore`, parameterised `TabGeometry`, `HoverPolicy`) and pass the local syntax gate.
+
+## 2026-10-15 — dev3 implementation checkpoint 2
+
+- Implemented on `arena/8c38d759-xtension` (no commit, push, tag or PR yet at the time of writing): typed settings with a cached, size-bounded, unknown-key-preserving store; parameterised overlay geometry (18-40 logical px, inset 0-12); hover visibility mode with a bounded keep-time and display-only gating; a settings window behind an `ISettingsHost` contract; a Vietnamese/English string table with an immediate language switch; pointer reading without pointer injection; and the measured cost fixes (idempotent placement, negative identity caching, change-gated notification, `CacheRequest` disposal, hover scan gating).
+- Regression coverage written in the same change: core tests for settings persistence/clamping/corruption/reset, parameterised geometry, the hover state machine (including the grace boundary and a clock that goes backwards), string-table completeness in both languages; Windows synthetic tests for overlay resize and idempotent placement, settings-window layout at 100/125/150/200% text scaling, in-place language switching, host round trip with out-of-range values, and a real Ctrl+W chord that must be delivered in full and leave no key down; a real-Brave second phase for hover mode, the configured 40 px button, a click on a hover-shown button, persistence across a restart with Brave open and recovery from a corrupted settings file.
+- Local gates available in this environment, all green before the push: tree-sitter C# parse of every file (0 errors), the identifier/string-table cross-check (`tools/api-check.py`), the static-rule mirror (`tools/verify-source.py`, including the new rules that Vietnamese text may only appear in the string table and that `NativeMethods` may not move the pointer), and YAML validation of both workflows. These prove syntax, identifier consistency and static rules only. They do not compile the project, and no test or browser run was performed here.
+- Release plumbing added: `VERSION` = `0.1.0-dev3`, the CHANGELOG dev3 section, README settings/hover/language tables, `docs/DEV3_AUDIT.md`, an updated capability boundary, the `performance` CI job and `scripts/measure-performance.ps1` (published dev2 EXE versus candidate, same runner). Next: push, open the PR against `main` (open/unmerged), read the CI result from the run, and only then ask the owner to test the CI-built EXE.
+
+## 2026-10-15 — dev3 correction: the CacheRequest finding was wrong
+
+- CI run 38727272108 compiled the whole application and the Windows harness and failed on a single call:
+  `src/Uia/UiaTabScanner.cs` called `state.Cache.Dispose()`. In .NET Framework 4.8 `System.Windows.Automation.CacheRequest`
+  has no `Dispose`; the disposable object is the `CacheRequestActivation` returned by `Activate()`, which the existing
+  `using` block already releases. The "per-scan CacheRequest leak" recorded as finding 8 was therefore an incorrect
+  hypothesis, and the attempted fix was itself the only defect it introduced.
+- Corrected rather than hidden: the call is removed and replaced with a comment recording the verified API surface, the
+  CHANGELOG entry now says the finding was refuted instead of fixed, `docs/DEV3_AUDIT.md` finding 8 now documents the
+  investigation and its withdrawal, and the performance section lists the item under "investigated and not changed".
+  The earlier entry in this log that describes the fix stays as written; this entry supersedes its conclusion.
+- Lesson recorded for later work: this environment has no compiler, and identifier checks cannot know whether a
+  framework type exposes a member. An API-surface claim about a BCL type is only settled by the compiler, so it must be
+  stated as a hypothesis until CI has compiled it.
+
+## 2026-10-15 — dev3 correction: the Windows harness did not compile
+
+- CI run 38727819083 (`56c7b4c`) fixed the application build: "Static checks and unit tests" and "MSBuild project check"
+  both succeeded, and the check-run annotations for the two `Build` jobs named five errors, all inside the Windows test
+  harness and all mine rather than the product's:
+  `tests\WindowsTests\Program.cs` used a control list that the method never declared (CS0103, twice), `Measurement` was unknown
+  because `scripts/test-windows.ps1` compiles an explicit file list that never listed `tests\WindowsTests\Measurement.cs`
+  (CS0103), and `tests\WindowsTests\BraveAcceptance.cs` declared a nested `window` inside a scope that already used an
+  outer `window` (CS0136, twice).
+- Fixes: the settings test now declares its control list where it starts using it; `Measurement.cs` is in the harness
+  file list; the browser-bounds local is named `braveBounds` so it no longer collides with the overlay-window local.
+  No product file changed in this commit.
+- Cause worth remembering: the harness file list is hand-maintained while `Xtension.csproj` and the application build
+  glob the tree, so a new test file can be compiled by nothing and still be "missing" at the same time. A guard for
+  that gap is being added to the local and CI check sets.
+
+## 2026-10-15 - dev3 CI: builds and measurement green, two harness defects fixed
+
+- CI run 38728609891 (`120a5de`): "Static checks and unit tests", "MSBuild project check", "Build x86", "Build x64" and
+  "Package provenance and checksums" all succeeded, and the new "Published baseline vs candidate resources (x64)" job
+  succeeded as well, so both dev3 EXEs and the published dev2 baseline were measured on the same runner. The only red
+  jobs were the two "Isolated real Brave smoke" jobs, and they failed in step 4, "Detect matching published application
+  source", before any browser work started.
+- Cause: that step ran `& gh release view <tag> --json tagName 2>$null` while `$ErrorActionPreference` was `'Stop'`. On
+  Windows PowerShell 5.1 a redirected native stderr line is promoted to a terminating error and `2>$null` does not help,
+  so the "release not found" message that `gh` writes for the still-unpublished `v0.1.0-dev3` killed the step instead of
+  the intended "no matching publication yet" fallback. The branch had never run before: it was added while `v0.1.0-dev2`
+  already existed. The probe now saves the preference, probes with `'Continue'` and decides from `$LASTEXITCODE`, and the
+  hazard is written down in `AGENTS.md` rule 5.
+- Also in this batch (`120a5de`), the Windows harness itself was made to compile: `scripts/test-windows.ps1` now lists
+  `tests\WindowsTests\Measurement.cs`, `SettingsWindowReflectsHostAndClampsEveryValue` declares the control list it
+  uses, and the real-Brave phase names the browser bounds `braveBounds` instead of shadowing `window`. The synthetic
+  harness then reported "10 passed, 0 failed" on the runner.
+- Not yet verified: the real-Brave acceptance phase for dev3. It only starts once the publication probe no longer aborts
+  the job, so its result is the next thing to read from CI.
+
+## 2026-10-15 - dev3 guards: harness file lists, local scopes and readable measurements
+
+- The dev3 change set lost four CI cycles to mistakes a compiler would have caught in one pass, two of which were
+  structural rather than logical: a test file that no harness compiled (`Measurement.cs`) and a local that shadowed a
+  name in an enclosing scope (`window` in the real-Brave phase). Both classes now have a gate that runs before the push.
+- `scripts/verify-source.ps1` and its local mirror `tools/verify-source.py` gained two rules: every file under
+  `tests/WindowsTests` must be named by `scripts/test-windows.ps1` (the harness compiles a hand-written list while
+  `src/` and `tests/UnitTests` glob), and every test file a script names must exist. Both directions are proven by fault
+  injection: removing the `Measurement.cs` entry, and pointing a script at a non-existent test file, each make the check
+  fail with the file named.
+- `tools/api-check.py` gained a local-scope audit: it attributes every local declaration to its block chain and reports a
+  name declared twice in one chain - the compiler's CS0136 (a declaration inside a scope that already declared the name)
+  and CS0128 (the same scope twice). Sibling blocks, two methods and a local that repeats a field name are legal and are
+  not reported; declarations inside `for`/`foreach`/`using` headers are not attributed to a scope at all, so a shadow
+  that involves one is not reported. Proven by fault injection: restoring the pre-fix `window` shadow in
+  `tests/WindowsTests/BraveAcceptance.cs` reproduces exactly the two CI annotations (lines 324 and 347 against line 264,
+  CS0136) and nothing else. It cannot see a name that nothing declares (CS0103), so it does not replace a compiler; the
+  tree is currently clean at 497 local declarations.
+- `scripts/measure-performance.ps1` now publishes each measurement line as a notice in addition to writing the report
+  file, so the dev2-versus-dev3 numbers are readable on the checks page and not only inside the artifact download. The
+  lines contain a label and numbers only - no title, no URL.
+
+## 2026-10-15 - dev3 CI is green on a08a9cf
+
+- Run 38731531568 (`a08a9cf`) — the first green run of this change set: "Static checks and unit tests", "MSBuild project
+  check", "Build x86", "Build x64", "Isolated real Brave smoke x86", "Isolated real Brave smoke x64",
+  "Published baseline vs candidate resources (x64)" and "Package provenance and checksums" all succeeded.
+- Real-Brave acceptance (Brave 155.1.97.56, Windows 10.0.26100, 96 DPI, both architectures) passed all 21 checks of
+  the two phases, including the dev3 additions: hover mode shows the configured 40x40 px button over the selected tab,
+  moving the pointer from the tab onto the button keeps it visible, an inactive tab and the title bar never satisfy the
+  hover rule, a click on a hover-shown button closes exactly one tab through the unchanged validation path, the hover
+  mode and the 40 px size survive a restart with Brave still open, and a corrupted settings file falls back to
+  always-show with the documented 26 px default.
+- Resource measurement, dev2 published EXE versus this candidate, one runner, 20 s samples each (browser-foreground:
+  dev2 -> candidate): startup 108 -> 104 ms; idle CPU 3.23 -> 1.60 %; working set 48.3 -> 43.7 MiB; private bytes
+  34.9 -> 31.5 MiB; handles 375 -> 370; UI Automation scan p50 63.1 -> 21.2 ms, p90 67.7 -> 23.5 ms. The no-browser
+  scenario is unchanged by design (0.08 -> 0.00 % idle CPU, same working set within noise).
+- Two harness defects were found and fixed by reading this run rather than assumed: the second phase inherited a Brave
+  profile from the first phase, whose tabs the killed first phase had left behind — a restored session gave the phase a
+  fixture it did not expect — and the phase asserted a tab count instead of probing it. It now uses its own private
+  profile directory, probed the real tab height to choose the largest configured size that fits, and reported the
+  fixture it actually found.
+- Not verified here: the owner's own Windows desktop pass (physical DPI, mixed monitors, rapid clicking, tray and
+  startup behaviour). `v0.1.0-dev3` is not tagged and PR #3 stays open and unmerged until that report exists.
+
+## 2026-10-15 - correction: the real Brave tab does hold the 40 px maximum
+
+- While fixing the smoke phase I wrote into the README and into the changelog bullet that a Brave v1.97.56 tab cannot
+  hold the 40 px maximum, and treated the earlier "configured-phase scan did not confirm three tabs" failure as evidence
+  of that. The green runs show the opposite: with the phase's own private profile the fixture has three standard
+  horizontal tabs, and the 40x40 px button is displayed over the real selected tab in both architectures. The earlier
+  failure was the inherited session, not the tab height.
+- Corrected rather than left standing: the README paragraph now states the measured fact (a 40 px button with a 5 px
+  inset fits the CI runner's Brave tab) and keeps the fail-closed rule for a tab that cannot hold the configuration. The
+  product is unchanged - the rule and its unit tests were always correct; only my explanation of one CI failure was
+  wrong. Lesson, again: a failed wait is evidence about the fixture until it is diagnosed, not about the product.
+
+## 2026-10-15 - dev3 safety review and one documentation over-claim
+
+- With CI green and the owner's manual pass still pending, I re-read the safety-critical paths of this change set with
+  fresh eyes: `CloseGuard.Evaluate` and the close path in `ActiveTabController` (epoch check, foreground and modifier
+  re-read immediately before injection, cooldown, click containment in the configured × area), the hover rule and its
+  grace period (`HoverPolicy`, including the fail-closed handling of a clock that moves backwards), `ScanWorker`
+  (one pending request, one running scan, a completion callback that cannot kill the worker thread), `SettingsStore`
+  (cache, bounds, atomic replace, temporary-file cleanup) and `CloseButtonOverlay.ShowAt` (idempotent placement, native
+  bounds re-verified after every move, hide on failure). No defect was found in the code, and nothing in the review
+  needed a source change.
+- One documentation over-claim was found and corrected: audit finding 2 said an oversized settings file is "left
+  untouched on disk", which reads as an absolute promise even though the next settings change rewrites the file, as it
+  does for any other file. The finding now states exactly that. Documentation only; no behaviour changed and the
+  passing CI run on `50d9bc8` still stands for the code.
+- State at this point: CI is green on `50d9bc8` (all eight jobs), PR #3 is open and unmerged, no tag exists, and the
+  only outstanding gate is the owner's run of the CI-built EXE on their own Windows machine.
+
+## 2026-10-15 - correction: the real-Brave evidence is 18 checks, not 21
+
+- The entry above and the pull request description both said the real-Brave job "passed all 21 checks". Counting the
+  `PASS` lines the job actually publishes gives 18 real checks (12 in the always-show phase, 6 in the configured
+  phase) plus the job's closing summary line "PASS isolated real-Brave smoke; not a full desktop/DPI acceptance
+  matrix." There were never 21; the number was written from memory instead of from the annotation.
+- Corrected in the pull request description (18 checks, counted from the annotation) and recorded here. It changes no
+  code, no test and no result: the same 18 checks passed in both architectures. Rule for the next report: a number
+  that appears in a document must be counted in the evidence it cites, not remembered.
+
+## 2026-10-15 - dev3 responsiveness work: the x no longer waits out the interval, and windows open faster
+
+- Owner report: the delay before the button appears is significant, and the settings window lags when it opens. Owner
+  direction: make it as fast as possible cleanly, then merge and tag. Both causes were removed at their source; no
+  freshness window, deadline, budget, cooldown, stall rule or confirmation step was touched.
+- **Hover arrival.** `ActiveTabController.ShouldScanNow` used to be consulted only after the interval gate, so a pointer
+  that arrived just after a scan waited up to a full interval (500 ms default) for the button. The pointer gate now runs
+  on every tick and remembers whether the pointer is in the tab strip; the outside-to-inside transition clears the
+  interval, so one scan is submitted on that tick, and `EffectiveScanIntervalMs()` uses the documented minimum (300 ms)
+  while the pointer stays inside the strip. Away from the strip nothing changes: no scan is submitted at all. The flag is
+  re-armed on a mode change and whenever the pointer leaves, so a resting pointer cannot cause a scan loop (the worker
+  also still allows only one scan at a time).
+- **Windows coming to the front.** A foreground change (another Brave window, or Brave returning) now clears the interval
+  for the next tick, so the confirmed overlay follows an alt-tab immediately instead of waiting out the interval that
+  belonged to the previous window.
+- **Window construction.** `SettingsForm` and `MainForm` added one row at a time to auto-sizing `TableLayoutPanel`s, so
+  WinForms ran a full layout pass per row, and every `WrappingLabel`/`WrappingCheckBox` re-measured its text with GDI on
+  every pass; each control also created its own `Font`, and `UiLayout.FitToWorkingArea` assigned `Size` even when the
+  window already fitted. Now: the tree is built with layout suspended and laid out once, `UiLayout.TextMeasurement` caches
+  the last measurement per control and drops it on `OnTextChanged`/`OnFontChanged`, the two windows share a handful of
+  fonts by role (four in the settings window, five in the dashboard), and the fit check assigns nothing when nothing has
+  to change.
+- **New regression test.** `SettingsWindowBuildsOnceAndLaysOutStably` (Windows harness) opens the settings window, prints
+  `INFO settings window built and shown in N ms` (the harness now forwards `INFO` lines as CI notices, so the number is
+  readable on the checks page) and then asserts that two further layout passes leave every control's bounds exactly as
+  they were - which is what a stale measurement cache would break.
+- Local gates after the work, all clean: `tools/api-check.py` ("API audit clean: 66 types, 143 StringIds, 143 table rows",
+  "Scope audit clean: 512 local declarations, no name is declared twice in one block chain") and `tools/verify-source.py`
+  (passed, `v0.1.0-dev3`). The compiler-level proof is the CI run recorded below.
+- Environment note, recorded for honesty: this session's local git refs were found rewound to `main` (`5917ded`) with the
+  dev3 work left in the working tree. Nothing was lost - the branch tip `27cba73` was verified on the remote with
+  `git ls-remote`, and the local branch was restored to it with `git reset --mixed origin/arena/8c38d759-xtension`, which
+  does not touch `main` or the working tree. `main` was never modified by this session.

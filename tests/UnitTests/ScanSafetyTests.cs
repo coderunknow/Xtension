@@ -32,7 +32,7 @@ namespace Xtension.Tests
             ScanResult scan = new ScanResult();
             scan.Tabs.Add(new TabInfo { Bounds = new Rectangle(0, 8, 180, 36), Selected = true, SelectionKnown = true });
             scan.Tabs.Add(new TabInfo { Bounds = new Rectangle(180, 8, 180, 36) });
-            TabSelector.Apply(scan, new Rectangle(0, 0, 1200, 800), false, 3, 10);
+            TabSelector.Apply(scan, new Rectangle(0, 0, 1200, 800), false, 3, 10, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
             Assert.AreEqual(ScanOutcome.NoSelectedTab, scan.Outcome, "unknown second tab may also be selected");
             Assert.IsTrue(scan.SelectedHorizontalTab == null, "never authorise close");
         }
@@ -42,11 +42,11 @@ namespace Xtension.Tests
         {
             foreach (int dpi in new int[] { 96, 120, 144, 192 })
             {
-                int size = TabGeometry.OverlaySize(dpi);
+                int size = TabGeometry.OverlaySize(dpi, AppInfo.DefaultButtonSizeLogical);
                 Rectangle shortTab = new Rectangle(-800, 8, 400, size - 1);
-                Assert.IsTrue(TabGeometry.GetOverlayBounds(shortTab, dpi).IsEmpty, "short tab at " + dpi);
+                Assert.IsTrue(TabGeometry.GetOverlayBounds(shortTab, dpi, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical).IsEmpty, "short tab at " + dpi);
                 Rectangle tab = new Rectangle(-800, 8, 400, size);
-                Rectangle overlay = TabGeometry.GetOverlayBounds(tab, dpi);
+                Rectangle overlay = TabGeometry.GetOverlayBounds(tab, dpi, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
                 Assert.IsFalse(overlay.IsEmpty, "exact fit");
                 Assert.IsTrue(tab.Contains(overlay), "negative monitor coordinates and exact fit");
             }
@@ -57,7 +57,7 @@ namespace Xtension.Tests
         {
             ScanResult scan = new ScanResult();
             scan.Tabs.Add(new TabInfo { Bounds = new Rectangle(0, 8, 180, 16), Selected = true, SelectionKnown = true });
-            TabSelector.Apply(scan, new Rectangle(0, 0, 1200, 800), false, 3, 1);
+            TabSelector.Apply(scan, new Rectangle(0, 0, 1200, 800), false, 3, 1, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
             Assert.AreEqual(ScanOutcome.NoSelectedTab, scan.Outcome, "recognition must agree with overlay fit");
         }
     }

@@ -5,7 +5,11 @@ using System.Windows.Forms;
 
 namespace Xtension
 {
-    /// <summary>Shows the latest scan in detail. Tab titles appear here only; they are never written to the log.</summary>
+    /// <summary>
+    /// Shows the latest scan in detail. Tab titles appear here only; they are never written to the log.
+    /// Every displayed sentence is produced on demand from the current language, and the render cache is
+    /// dropped on a language change so nothing on screen keeps the previous translation.
+    /// </summary>
     internal sealed class DiagnosticsForm : Form
     {
         private readonly Font _ownedFont;
@@ -16,7 +20,6 @@ namespace Xtension
 
         public DiagnosticsForm()
         {
-            Text = AppInfo.ProductName + " — Chẩn đoán " + AppInfo.DisplayVersion;
             MinimumSize = new Size(360, 280);
             Size = new Size(980, 560);
             StartPosition = FormStartPosition.CenterScreen;
@@ -26,7 +29,7 @@ namespace Xtension
             BackColor = Color.FromArgb(245, 247, 250);
 
             _status = ReadableText();
-            _status.Text = "Đang chờ kết quả quét…";
+            _status.Text = Strings.Get(StringId.DiagWaiting);
             _summary = ReadableText();
             _summary.BackColor = Color.FromArgb(235, 239, 245);
 
@@ -38,11 +41,6 @@ namespace Xtension
             _list.BorderStyle = BorderStyle.FixedSingle;
             _list.ShowItemToolTips = true;
             _list.HideSelection = false;
-            _list.Columns.Add("Tab / tên truy cập", 300);
-            _list.Columns.Add("Đang chọn", 90);
-            _list.Columns.Add("Trong thanh ngang", 130);
-            _list.Columns.Add("Vị trí màn hình (px)", 200);
-            _list.Columns.Add("Ngoài màn hình", 120);
 
             TableLayoutPanel layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(8) };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -53,11 +51,38 @@ namespace Xtension
             layout.Controls.Add(_list, 0, 1);
             layout.Controls.Add(_summary, 0, 2);
             Controls.Add(layout);
+            ApplyLanguage();
             Shown += delegate
             {
                 UiLayout.FitToWorkingArea(this);
                 foreach (ColumnHeader column in _list.Columns) column.Width = Math.Max(column.Width, TextRenderer.MeasureText(column.Text, _list.Font).Width + 24);
             };
+        }
+
+        /// <summary>Re-applies the window title and column headers and forces the next render to redraw.</summary>
+        public void ApplyLanguage()
+        {
+            Text = AppInfo.ProductName + " - " + Strings.Get(StringId.DiagTitle) + " " + AppInfo.DisplayVersion;
+            string[] headers = new string[]
+            {
+                Strings.Get(StringId.DiagColumnTab),
+                Strings.Get(StringId.DiagColumnSelected),
+                Strings.Get(StringId.DiagColumnHorizontal),
+                Strings.Get(StringId.DiagColumnBounds),
+                Strings.Get(StringId.DiagColumnOffscreen)
+            };
+            if (_list.Columns.Count != headers.Length)
+            {
+                _list.Columns.Clear();
+                foreach (string header in headers) _list.Columns.Add(header, 150);
+            }
+            else
+            {
+                for (int index = 0; index < headers.Length; index++) _list.Columns[index].Text = headers[index];
+            }
+            _status.Text = Strings.Get(StringId.DiagWaiting);
+            _summary.Text = string.Empty;
+            _renderSignature = string.Empty;
         }
 
         protected override void Dispose(bool disposing)
@@ -84,37 +109,31 @@ namespace Xtension
             {
                 _status.Text = snapshot.HiddenReason;
                 _list.Items.Clear();
-                _summary.Text = "Chưa có kết quả quét. Nút × được ẩn cho đến khi Xtension xác nhận được tab đang chọn.";
+                _summary.Text = Strings.Get(StringId.DiagNoScanYet);
                 return;
             }
 
-            _status.Text = (snapshot.OverlayVisible ? "Nút × đang hiển thị." : snapshot.HiddenReason) + "\r\nQuét gần nhất: " + result.Message + "   [" + result.Outcome + "]";
+            _status.Text = (snapshot.OverlayVisible ? Strings.Get(StringId.DiagVisibleNow) : snapshot.HiddenReason)
+                + Strings.Get(StringId.DiagLastScanLine, result.Message, result.Outcome);
             _list.BeginUpdate();
             _list.Items.Clear();
             foreach (TabInfo tab in result.Tabs)
             {
-                ListViewItem item = new ListViewItem(string.IsNullOrEmpty(tab.Name) ? "(TabItem không có tên)" : tab.Name);
+                ListViewItem item = new ListViewItem(string.IsNullOrEmpty(tab.Name) ? Strings.Get(StringId.DiagUntitledTab) : tab.Name);
                 item.ToolTipText = tab.Name;
-                item.SubItems.Add(tab.SelectionKnown ? (tab.Selected ? "CÓ" : "không") : "không rõ");
-                item.SubItems.Add(tab.IsHorizontalCandidate ? "có" : "không");
+                item.SubItems.Add(tab.SelectionKnown ? (tab.Selected ? Strings.Get(StringId.Yes) : Strings.Get(StringId.No)) : Strings.Get(StringId.Unknown));
+                item.SubItems.Add(tab.IsHorizontalCandidate ? Strings.Get(StringId.Yes) : Strings.Get(StringId.No));
                 item.SubItems.Add(FormatRect(tab.Bounds));
-                item.SubItems.Add(tab.IsOffscreen ? "có" : "không");
+                item.SubItems.Add(tab.IsOffscreen ? Strings.Get(StringId.Yes) : Strings.Get(StringId.No));
                 if (tab.Selected && tab.IsHorizontalCandidate) item.BackColor = Color.FromArgb(220, 245, 220);
                 _list.Items.Add(item);
             }
             _list.EndUpdate();
 
             StringBuilder summary = new StringBuilder();
-            summary.Append("Quét ").Append(result.NodesVisited).Append(" phần tử UIA trong ").Append(result.ElapsedMs).Append(" ms; DPI cửa sổ ").Append(result.Dpi).Append(".");
-            if (snapshot.OverlayVisible)
-            {
-                summary.Append(" Nút × nằm sát mép phải tab được xác nhận.");
-            }
-            else
-            {
-                summary.Append(" Nút × được ẩn để tránh đóng nhầm.");
-            }
-            if (!string.IsNullOrEmpty(result.Error)) summary.Append(" Lỗi: ").Append(result.Error);
+            summary.Append(Strings.Get(StringId.DiagSummary, result.NodesVisited, result.ElapsedMs, result.Dpi));
+            summary.Append(snapshot.OverlayVisible ? Strings.Get(StringId.DiagSummaryVisible) : Strings.Get(StringId.DiagSummaryHidden));
+            if (!string.IsNullOrEmpty(result.Error)) summary.Append(Strings.Get(StringId.DiagErrorLabel, result.Error));
             _summary.Text = summary.ToString();
         }
 
@@ -133,7 +152,7 @@ namespace Xtension
 
         private static string FormatRect(Rectangle r)
         {
-            if (r == Rectangle.Empty) return "(không có)";
+            if (r == Rectangle.Empty) return Strings.Get(StringId.DiagNoRect);
             return "L" + r.Left + " T" + r.Top + " R" + r.Right + " B" + r.Bottom;
         }
     }

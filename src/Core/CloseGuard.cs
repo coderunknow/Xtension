@@ -18,6 +18,10 @@ namespace Xtension
         /// <summary>True when Shift, Alt or Win is physically held. Ctrl+Shift+W would close the whole window.</summary>
         public bool BlockingModifierDown;
         public ScanResult Scan;
+        /// <summary>Configured × size in logical pixels, so the validated area matches the button on screen.</summary>
+        public int OverlaySizeLogical = AppInfo.DefaultButtonSizeLogical;
+        /// <summary>Configured inset from the tab's right edge, in logical pixels.</summary>
+        public int OverlayInsetLogical = AppInfo.DefaultButtonInsetLogical;
         /// <summary>Screen coordinates of the physical click on the overlay.</summary>
         public Point Click;
         public long NowMs;
@@ -69,7 +73,7 @@ namespace Xtension
                 return CloseDecision.Reject("active tab not confirmed (" + scan.Outcome + ")");
 
             Rectangle tab = scan.SelectedHorizontalTab.Bounds;
-            Rectangle closeArea = TabGeometry.GetOverlayBounds(tab, scan.Dpi);
+            Rectangle closeArea = TabGeometry.GetOverlayBounds(tab, scan.Dpi, request.OverlaySizeLogical, request.OverlayInsetLogical);
             if (closeArea.IsEmpty) return CloseDecision.Reject("confirmed tab too small for the close button");
             if (!closeArea.Contains(request.Click))
                 return CloseDecision.Reject("click was outside the × of the confirmed active tab (stale position)");

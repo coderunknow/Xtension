@@ -99,6 +99,57 @@ jobs:
         shell: powershell
         run: ./scripts/test-package.ps1
 
+  performance:
+    name: Published baseline vs candidate resources (x64)
+    needs: [static-and-tests]
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.published_tag || github.event.pull_request.head.sha || github.sha }}
+      - name: Build candidate, harness and measure script inputs (x64)
+        shell: powershell
+        run: |
+          ./scripts/build.ps1 -Arch x64
+          ./scripts/test-windows.ps1 -Arch x64
+      - name: Download and checksum-verify the published baseline
+        shell: powershell
+        env:
+          BASELINE_TAG: v0.1.0-dev2
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = $env:BASELINE_TAG
+          $asset = "Xtension-$tag-win-x64.exe"
+          $destination = 'dist/baseline'
+          New-Item -ItemType Directory -Force -Path $destination | Out-Null
+          & gh release download $tag --pattern $asset --pattern SHA256SUMS.txt --dir $destination --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Published baseline download failed.' }
+          $line = @(Get-Content -LiteralPath (Join-Path $destination 'SHA256SUMS.txt') | Where-Object { $_.EndsWith("  $asset") })
+          if ($line.Count -ne 1) { throw 'Published baseline is missing or duplicated in its checksum manifest.' }
+          $expected = ($line[0] -split '  ', 2)[0]
+          $actual = (Get-FileHash -LiteralPath (Join-Path $destination $asset) -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw 'Published baseline checksum mismatch.' }
+          Write-Host "::notice title=Published baseline under measurement::$asset sha256=$actual"
+      - name: Measure both shipped EXEs on this runner
+        shell: powershell
+        env:
+          BASELINE_TAG: v0.1.0-dev2
+        run: |
+          ./scripts/measure-performance.ps1 -Arch x64 -Seconds 20 `
+            -Baseline ("dist/baseline/Xtension-" + $env:BASELINE_TAG + "-win-x64.exe") `
+            -Candidate 'dist/Xtension-win-x64.exe' `
+            -BaselineLabel $env:BASELINE_TAG -CandidateLabel 'candidate'
+      - name: Upload resource evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-evidence
+          path: dist/perf/performance-x64.txt
+          if-no-files-found: error
+          retention-days: 30
+
   brave-smoke:
     name: Isolated real Brave smoke ${{ matrix.arch }}
     strategy:
@@ -107,7 +158,7 @@ jobs:
         arch: [x86, x64]
     needs: static-and-tests
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -128,8 +179,19 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $tag = $env:REQUESTED_TAG
           if (-not $tag) { $tag = 'v' + (Get-Content -LiteralPath VERSION -Raw).Trim() }
-          & gh release view $tag --json tagName 2>$null | Out-Null
-          if ($LASTEXITCODE -ne 0) {
+          # Windows PowerShell 5.1 promotes a redirected native stderr line to a terminating error while
+          # $ErrorActionPreference is 'Stop', and `gh release view` writes "release not found" to stderr for a tag that
+          # is not published yet, so the probe would kill the step before its exit code could be read. Probe with
+          # 'Continue' and judge the release by the exit code only.
+          $saved = $ErrorActionPreference
+          $ErrorActionPreference = 'Continue'
+          try {
+            & gh release view $tag --json tagName 1>$null 2>$null
+            $viewed = $LASTEXITCODE
+          } finally {
+            $ErrorActionPreference = $saved
+          }
+          if ($viewed -ne 0) {
             if ($env:REQUESTED_TAG) { throw 'Requested publication is unavailable.' }
             Write-Host 'No matching publication yet; test the newly built candidate.'
             exit 0

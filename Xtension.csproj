@@ -53,12 +53,15 @@
     <Compile Include="src\AssemblyInfo.cs" />
     <Compile Include="src\Program.cs" />
     <Compile Include="src\Core\AppInfo.cs" />
+    <Compile Include="src\Core\AppSettings.cs" />
     <Compile Include="src\Core\AppLog.cs" />
     <Compile Include="src\Core\AppPaths.cs" />
     <Compile Include="src\Core\Clock.cs" />
+    <Compile Include="src\Core\HoverPolicy.cs" />
     <Compile Include="src\Core\ScanSafety.cs" />
     <Compile Include="src\Core\CloseGuard.cs" />
     <Compile Include="src\Core\SettingsStore.cs" />
+    <Compile Include="src\Core\Strings.cs" />
     <Compile Include="src\Core\TabGeometry.cs" />
     <Compile Include="src\Core\TabModels.cs" />
     <Compile Include="src\Core\TabSelector.cs" />
@@ -73,7 +76,9 @@
     <Compile Include="src\App\TrayAppContext.cs" />
     <Compile Include="src\UI\CloseButtonOverlay.cs" />
     <Compile Include="src\UI\DiagnosticsForm.cs" />
+    <Compile Include="src\UI\ISettingsHost.cs" />
     <Compile Include="src\UI\MainForm.cs" />
+    <Compile Include="src\UI\SettingsForm.cs" />
     <Compile Include="src\UI\UiLayout.cs" />
     <Compile Include="src\UI\TrayIcon.cs" />
     <Compile Include="build\generated\VersionInfo.g.cs" />

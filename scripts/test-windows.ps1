@@ -22,7 +22,8 @@ try {
         (Join-Path $root 'build\generated\VersionInfo.g.cs'),
         (Join-Path $root 'tests\UnitTests\TestFramework.cs'),
         (Join-Path $root 'tests\WindowsTests\Program.cs'),
-        (Join-Path $root 'tests\WindowsTests\BraveAcceptance.cs')
+        (Join-Path $root 'tests\WindowsTests\BraveAcceptance.cs'),
+        (Join-Path $root 'tests\WindowsTests\Measurement.cs')
     )
     Invoke-Csc (Join-Path $framework 'csc.exe') $arguments
     $results = @(& $output 2>&1 | ForEach-Object { "$_" })
@@ -30,7 +31,7 @@ try {
     $results | ForEach-Object {
         Write-Host $_
         if ($_ -like 'FAIL *') { Write-Host ("::error title=Windows regression::" + $_) }
-        if ($_ -like 'Legacy cache failure:*' -or $_ -like '*passed, *failed.*') { Write-Host ("::notice title=Windows evidence::" + $_) }
+        if ($_ -like 'Legacy cache failure:*' -or $_ -like '*passed, *failed.*' -or $_ -like 'INFO *') { Write-Host ("::notice title=Windows evidence::" + $_) }
     }
     if ($exitCode -ne 0) { throw "Windows regression tests failed ($exitCode)." }
 }
