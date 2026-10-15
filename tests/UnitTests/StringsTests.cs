@@ -56,9 +56,9 @@ namespace Xtension.Tests
                 List<string> vietnamese = new List<string>();
                 foreach (StringId id in AllIds()) vietnamese.Add(Strings.Get(id));
                 Strings.Language = AppLanguage.English;
-                // Rows that are language-neutral by design: the log file header is written into a log file, and the
-                // tray suffix is a fragment appended to a product name, not a sentence of its own.
-                List<StringId> neutral = new List<StringId> { StringId.LogFileHeader };
+                // Rows that are language-neutral by design: the log file header is written into a log file rather
+                // than the interface, and a language is named in its own language in both columns.
+                List<StringId> neutral = new List<StringId> { StringId.LogFileHeader, StringId.LanguageEnglish, StringId.LanguageVietnamese };
                 for (int index = 0; index < vietnamese.Count; index++)
                 {
                     if ((StringId)index == StringId.None) continue;
