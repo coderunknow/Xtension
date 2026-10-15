@@ -216,3 +216,26 @@ Rules: append new dated entries at the bottom. Do not rewrite or delete earlier 
 - `scripts/measure-performance.ps1` now publishes each measurement line as a notice in addition to writing the report
   file, so the dev2-versus-dev3 numbers are readable on the checks page and not only inside the artifact download. The
   lines contain a label and numbers only - no title, no URL.
+
+## 2026-10-15 - dev3 CI is green on a08a9cf
+
+- Run 38731531568 (`a08a9cf`) — the first green run of this change set: "Static checks and unit tests", "MSBuild project
+  check", "Build x86", "Build x64", "Isolated real Brave smoke x86", "Isolated real Brave smoke x64",
+  "Published baseline vs candidate resources (x64)" and "Package provenance and checksums" all succeeded.
+- Real-Brave acceptance (Brave 155.1.97.56, Windows 10.0.26100, 96 DPI, both architectures) passed all 21 checks of
+  the two phases, including the dev3 additions: hover mode shows the configured 40x40 px button over the selected tab,
+  moving the pointer from the tab onto the button keeps it visible, an inactive tab and the title bar never satisfy the
+  hover rule, a click on a hover-shown button closes exactly one tab through the unchanged validation path, the hover
+  mode and the 40 px size survive a restart with Brave still open, and a corrupted settings file falls back to
+  always-show with the documented 26 px default.
+- Resource measurement, dev2 published EXE versus this candidate, one runner, 20 s samples each (browser-foreground:
+  dev2 -> candidate): startup 108 -> 104 ms; idle CPU 3.23 -> 1.60 %; working set 48.3 -> 43.7 MiB; private bytes
+  34.9 -> 31.5 MiB; handles 375 -> 370; UI Automation scan p50 63.1 -> 21.2 ms, p90 67.7 -> 23.5 ms. The no-browser
+  scenario is unchanged by design (0.08 -> 0.00 % idle CPU, same working set within noise).
+- Two harness defects were found and fixed by reading this run rather than assumed: the second phase inherited a Brave
+  profile from the first phase, whose tabs the killed first phase had left behind — a restored session gave the phase a
+  fixture it did not expect — and the phase asserted a tab count instead of probing it. It now uses its own private
+  profile directory, probed the real tab height to choose the largest configured size that fits, and reported the
+  fixture it actually found.
+- Not verified here: the owner's own Windows desktop pass (physical DPI, mixed monitors, rapid clicking, tray and
+  startup behaviour). `v0.1.0-dev3` is not tagged and PR #3 stays open and unmerged until that report exists.
