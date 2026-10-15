@@ -158,3 +158,19 @@ Rules: append new dated entries at the bottom. Do not rewrite or delete earlier 
 - Lesson recorded for later work: this environment has no compiler, and identifier checks cannot know whether a
   framework type exposes a member. An API-surface claim about a BCL type is only settled by the compiler, so it must be
   stated as a hypothesis until CI has compiled it.
+
+## 2026-10-15 — dev3 correction: the Windows harness did not compile
+
+- CI run 38727819083 (`56c7b4c`) fixed the application build: "Static checks and unit tests" and "MSBuild project check"
+  both succeeded, and the check-run annotations for the two `Build` jobs named five errors, all inside the Windows test
+  harness and all mine rather than the product's:
+  `tests\WindowsTests\Program.cs` used a control list that the method never declared (CS0103, twice), `Measurement` was unknown
+  because `scripts/test-windows.ps1` compiles an explicit file list that never listed `tests\WindowsTests\Measurement.cs`
+  (CS0103), and `tests\WindowsTests\BraveAcceptance.cs` declared a nested `window` inside a scope that already used an
+  outer `window` (CS0136, twice).
+- Fixes: the settings test now declares its control list where it starts using it; `Measurement.cs` is in the harness
+  file list; the browser-bounds local is named `braveBounds` so it no longer collides with the overlay-window local.
+  No product file changed in this commit.
+- Cause worth remembering: the harness file list is hand-maintained while `Xtension.csproj` and the application build
+  glob the tree, so a new test file can be compiled by nothing and still be "missing" at the same time. A guard for
+  that gap is being added to the local and CI check sets.

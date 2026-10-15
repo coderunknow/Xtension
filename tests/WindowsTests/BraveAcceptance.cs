@@ -261,8 +261,8 @@ namespace Xtension.Tests
                 TabInfo inactive = FirstInactive(scan);
                 Assert.IsTrue(inactive != null, "the fixture needs at least one inactive tab");
 
-                Rectangle window = NativeMethods.GetWindowBounds(brave);
-                Point page = new Point(window.Left + window.Width / 2, window.Top + window.Height - 60);
+                Rectangle braveBounds = NativeMethods.GetWindowBounds(brave);
+                Point page = new Point(braveBounds.Left + braveBounds.Width / 2, braveBounds.Top + braveBounds.Height - 60);
                 SetCursorPos(page.X, page.Y);
 
                 app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });

@@ -360,6 +360,7 @@ namespace Xtension.Tests
             {
                 form.PrepareForExit();
                 form.Show();
+                List<Control> controls = AllControls(form);
 
                 AppSettings changed = host.Settings.Copy();
                 changed.VisibilityMode = OverlayVisibilityMode.HoverOnSelectedTab;

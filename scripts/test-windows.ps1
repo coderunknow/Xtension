@@ -22,7 +22,8 @@ try {
         (Join-Path $root 'build\generated\VersionInfo.g.cs'),
         (Join-Path $root 'tests\UnitTests\TestFramework.cs'),
         (Join-Path $root 'tests\WindowsTests\Program.cs'),
-        (Join-Path $root 'tests\WindowsTests\BraveAcceptance.cs')
+        (Join-Path $root 'tests\WindowsTests\BraveAcceptance.cs'),
+        (Join-Path $root 'tests\WindowsTests\Measurement.cs')
     )
     Invoke-Csc (Join-Path $framework 'csc.exe') $arguments
     $results = @(& $output 2>&1 | ForEach-Object { "$_" })
