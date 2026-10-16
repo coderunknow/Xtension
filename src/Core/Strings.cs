@@ -411,9 +411,9 @@ namespace Xtension
             new string[] { "Bật nút × tùy chỉnh", "Enable the custom × button" },
             new string[] { "Khi tắt, Xtension không hiện nút × và không gửi lệnh đóng tab. Đây không phải là thoát ứng dụng, và cũng không bật lại nút đóng gốc của trình duyệt.", "When this is off, Xtension shows no × and sends no close command. This is not the same as exiting the app, and it does not bring back the browser's native close buttons." },
             new string[] { "Chế độ hiển thị", "Visibility mode" },
-            new string[] { "Luôn hiện khi an toàn", "Always show when safe" },
-            new string[] { "Chỉ hiện khi trỏ chuột lên tab đang chọn", "Show only when the pointer is over the selected tab" },
-            new string[] { "Chế độ “luôn hiện khi an toàn” giữ nguyên hành vi cũ. Chế độ chỉ hiện khi trỏ chuột không hiện nút × khi con trỏ ở tab khác, thanh tiêu đề của trình duyệt, thanh tác vụ Windows hay ứng dụng khác; nút × vẫn xuất hiện ngay khi con trỏ nằm trên tab đang được xác nhận hoặc trên chính nút ×.", "“Always show when safe” keeps the previous behaviour. The hover mode never shows the × when the pointer is over another tab, the browser's title bar, the Windows taskbar or another application; it appears as soon as the pointer is over the confirmed selected tab or the × itself." },
+            new string[] { "Luôn khi an toàn", "Always when safe" },
+            new string[] { "Trỏ chuột vào tab", "Hover over the tab" },
+            new string[] { "“Luôn khi an toàn” giữ nguyên hành vi cũ. “Trỏ chuột vào tab” không hiện nút × khi con trỏ ở tab khác, thanh tiêu đề của trình duyệt, thanh tác vụ Windows hay ứng dụng khác; nút × vẫn xuất hiện ngay khi con trỏ nằm trên tab đang được xác nhận hoặc trên chính nút ×.", "“Always when safe” keeps the previous behaviour. “Hover over the tab” never shows the × when the pointer is over another tab, the browser's title bar, the Windows taskbar or another application; the × appears as soon as the pointer is over the confirmed selected tab or the × itself." },
             new string[] { "Kích thước và vị trí", "Size and position" },
             new string[] { "Kích thước nút × (điểm ảo, 18–40)", "× button size (logical pixels, 18–40)" },
             new string[] { "Khoảng cách từ mép phải tab (điểm ảo, 0–12)", "Inset from the right edge of the tab (logical pixels, 0–12)" },
@@ -440,10 +440,10 @@ namespace Xtension
             // dev4: performance profiles
             new string[] { "Hiệu năng", "Performance" },
             new string[] { "Hồ sơ hiệu năng", "Performance profile" },
-            new string[] { "Hồ sơ chỉ chọn nhịp quét và nhịp kiểm tra trong các giới hạn đã ghi ở trên. Không hồ sơ nào thay đổi thời hạn xác nhận, khoảng thời gian kết quả còn dùng được, thời gian chờ tối đa hay điều kiện đóng tab. Chọn “Tùy chỉnh” khi bạn tự đặt giá trị khoảng cách quét.", "A profile only selects scan and poll cadences inside the documented ranges above. No profile changes the confirmation deadline, the window in which a result may still be used, the maximum wait or the conditions for closing a tab. Choose “Custom” when you set the scan interval yourself." },
-            new string[] { "Cân bằng (mặc định, giống bản trước)", "Balanced (default, same as before)" },
-            new string[] { "Nhanh (cập nhật sớm nhất có thể)", "Fast (updates as early as possible)" },
-            new string[] { "Ít tài nguyên (ít quét nền hơn)", "Low resource (less background work)" },
+            new string[] { "Hồ sơ chỉ chọn nhịp quét và nhịp kiểm tra trong các giới hạn đã ghi ở trên. Không hồ sơ nào thay đổi thời hạn xác nhận, khoảng thời gian kết quả còn dùng được, thời gian chờ tối đa hay điều kiện đóng tab. Cân bằng là mặc định và giống bản trước; Nhanh phản hồi sớm nhất có thể; Ít tài nguyên giảm việc chạy nền. Chọn “Tùy chỉnh” khi bạn tự đặt giá trị khoảng cách quét.", "A profile only selects scan and poll cadences inside the documented ranges above. No profile changes the confirmation deadline, the window in which a result may still be used, the maximum wait or the conditions for closing a tab. Balanced is the default and matches the previous build; Fast reacts as early as possible; Low resource does less background work. Choose “Custom” when you set the scan interval yourself." },
+            new string[] { "Cân bằng", "Balanced" },
+            new string[] { "Nhanh", "Fast" },
+            new string[] { "Ít tài nguyên", "Low resource" },
             new string[] { "Tùy chỉnh", "Custom" },
             new string[] { "Hồ sơ: {0} · quét mỗi {1} ms · kiểm tra mỗi {2} ms", "Profile: {0} · scan every {1} ms · poll every {2} ms" },
 
@@ -461,10 +461,10 @@ namespace Xtension
             // dev4: supported browsers
             new string[] { "Trình duyệt được hỗ trợ", "Supported browsers" },
             new string[] { "{0} \u2014 {1}", "{0} ({1})" },
-            new string[] { "đã xác minh trên trình duyệt thật", "verified on a real browser" },
-            new string[] { "thử nghiệm: cần bạn tự kiểm tra", "experimental: please try it yourself" },
+            new string[] { "đã xác minh", "verified" },
+            new string[] { "thử nghiệm", "experimental" },
             new string[] { "chưa hỗ trợ", "not supported" },
-            new string[] { "Xtension chỉ nhận diện cửa sổ bằng tiến trình thật của trình duyệt, không nhận diện bằng tiêu đề cửa sổ. Bỏ chọn một trình duyệt thì Xtension không hiện nút × và không đóng tab nào trong trình duyệt đó. Mỗi lần nhấp × vẫn phải qua xác nhận mới.", "Xtension recognises a window by the real process of the browser, never by a window title. Clearing a browser makes Xtension show no × and close no tab in that browser. Every × click still goes through a fresh confirmation." },
+            new string[] { "Xtension chỉ nhận diện cửa sổ bằng tiến trình thật của trình duyệt, không nhận diện bằng tiêu đề cửa sổ. Bỏ chọn một trình duyệt thì Xtension không hiện nút × và không đóng tab nào trong trình duyệt đó. “Đã xác minh” nghĩa là đã có bản chạy thật trên trình duyệt đó và vượt qua ở bản phát hành; “thử nghiệm” nghĩa là cần bạn tự kiểm tra; “chưa hỗ trợ” nghĩa là bản này không đặt nút × vào đó. Mỗi lần nhấp × vẫn phải qua xác nhận mới.", "Xtension recognises a window by the real process of the browser, never by a window title. Clearing a browser makes Xtension show no × and close no tab in that browser. “Verified” means an automated run against the real browser passed for the published release; “experimental” means it needs your own testing; “not supported” means this build places no × there at all. Every × click still goes through a fresh confirmation." },
 
             // dev4: settings backup and restore
             new string[] { "Xuất cài đặt…", "Export settings…" },

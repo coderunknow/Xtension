@@ -56,15 +56,29 @@ namespace Xtension.Tests
                     IntPtr hwnd = fixture.MainWindowHandle;
                     Assert.IsTrue(hwnd != IntPtr.Zero, "fixture HWND");
                     Exception failure = null;
+                    // The 15 s deadline failed once on a loaded runner and the message said nothing about where the
+                    // time went. Each phase now records its own duration, so the next timeout identifies the step
+                    // that was slow - and says whether it was the product scan or the operating system's UI
+                    // Automation plumbing underneath it.
+                    List<string> phases = new List<string>();
+                    Stopwatch phaseClock = Stopwatch.StartNew();
+                    Action<string> phase = delegate(string name)
+                    {
+                        lock (phases) phases.Add(name + "=" + phaseClock.ElapsedMilliseconds + "ms");
+                        phaseClock.Restart();
+                    };
                     Thread worker = new Thread(delegate()
                     {
                         try
                         {
+                            phase("thread-start");
                             CacheRequest cache = new CacheRequest();
                             cache.Add(AutomationElement.ControlTypeProperty);
                             using (cache.Activate())
                             {
+                                phase("cache-activate");
                                 AutomationElement root = AutomationElement.FromHandle(hwnd);
+                                phase("from-handle");
                                 AutomationElement naked = TreeWalker.ControlViewWalker.GetFirstChild(root);
                                 Assert.IsTrue(naked != null, "fixture child exists");
                                 bool uncached = false;
@@ -81,8 +95,10 @@ namespace Xtension.Tests
                             // The fixture is a synthetic window, not a browser: the identity gate must refuse it.
                             // That refusal is asserted first, because it is what keeps a window that merely looks
                             // like a browser from being scanned with Brave's assumptions.
+                            phase("legacy-cache");
                             ScanResult refused = UiaTabScanner.Scan(hwnd, AppInfo.DefaultButtonSizeLogical,
                                 AppInfo.DefaultButtonInsetLogical);
+                            phase("refusal-scan");
                             Assert.AreEqual(ScanOutcome.ContractUnimplemented, refused.Outcome,
                                 "a window that is not an enabled browser is refused: " + refused.Outcome);
                             Assert.AreEqual(0, refused.Tabs.Count, "a refused scan exposes no tabs");
@@ -98,13 +114,21 @@ namespace Xtension.Tests
                             Assert.AreEqual(ScanOutcome.Ready, scan.Outcome, "scanner on synthetic horizontal tabs: " + scan.Error + " " + scan.Message);
                             Assert.AreEqual(2, scan.Tabs.Count, "both siblings enumerated with cache");
                             Assert.IsTrue(scan.Tabs[1].Selected && !scan.Tabs[0].Selected, "cached selection pattern");
+                            phase("contract-scan");
                         }
                         catch (Exception ex) { failure = ex; }
                     });
                     worker.IsBackground = true;
                     worker.SetApartmentState(ApartmentState.MTA);
                     worker.Start();
-                    Assert.IsTrue(worker.Join(15000), "bounded UIA test deadline");
+                    if (!worker.Join(15000))
+                    {
+                        string phasesSoFar;
+                        lock (phases) phasesSoFar = string.Join(" ", phases.ToArray());
+                        throw new AssertionFailure("bounded UIA test deadline exceeded after 15000 ms; phases completed so far: "
+                            + (phasesSoFar.Length == 0 ? "none - the worker never reached its first mark" : phasesSoFar)
+                            + " (each value is the time spent in that phase)");
+                    }
                     if (failure != null) throw new AssertionFailure(failure.ToString().Replace(Environment.NewLine, " | "));
                 }
                 finally
@@ -339,7 +363,9 @@ namespace Xtension.Tests
                                 }
                                 if (control is Button || control is CheckBox || control is RadioButton)
                                     Assert.IsTrue(control.Parent.ClientRectangle.Contains(control.Bounds),
-                                        "settings control clipped at " + scale + ": " + control.GetType().Name + " " + control.Bounds + " in " + control.Parent.ClientRectangle);
+                                        "settings control clipped at " + scale + ": " + control.GetType().Name
+                                        + " '" + control.Text + "' " + control.Bounds + " in " + control.Parent.GetType().Name
+                                        + " " + control.Parent.ClientRectangle);
                                 if (control is NumericUpDown || control is TrackBar)
                                     Assert.IsTrue(control.Left >= 0 && control.Right <= control.Parent.ClientSize.Width + 2,
                                         "numeric row escapes its group at " + scale + ": " + control.Bounds + " in " + control.Parent.ClientSize);
