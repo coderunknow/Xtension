@@ -52,6 +52,31 @@ namespace Xtension
             }
         }
 
+        /// <summary>Snapshot of every key currently stored, including preserved unknown keys.</summary>
+        public string[] Keys
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    EnsureLoadedLocked();
+                    List<string> keys = new List<string>(_values.Keys);
+                    keys.Sort(StringComparer.Ordinal);
+                    return keys.ToArray();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Raw stored value for a key, or an empty string when it is absent. Used by the backup importer, which must
+        /// reproduce a key it does not understand byte for byte.
+        /// </summary>
+        public string GetRaw(string key)
+        {
+            string value = GetString(key, null);
+            return value == null ? string.Empty : value;
+        }
+
         public string GetString(string key, string fallback)
         {
             try

@@ -32,7 +32,7 @@ namespace Xtension
         public const int CloseValidationTimeoutMs = 3000;
         // After a close keystroke, clicks are ignored for this long so a double-click cannot close the next tab.
         public const int CloseCooldownMs = 800;
-        // Scan cadence for the dashboard while Brave is not in front (diagnostics only, never the overlay).
+        // Scan cadence for the dashboard while no supported browser is in front (diagnostics only, never the overlay).
         public const int DashboardScanIntervalMs = 2000;
         public const int LogRotationBytes = 1024 * 1024;
         public const int LogThrottleMs = 10000;
@@ -56,6 +56,46 @@ namespace Xtension
         public const int MaxSettingsFileBytes = 64 * 1024;
         public const int MaxSettingsKeyLength = 64;
         public const int MaxSettingsValueLength = 256;
+
+        // Performance profiles (see Profiles). Every value is inside the documented setting range; a profile never
+        // selects a scan budget, a staleness window, a deadline, a cooldown or a confirmation rule.
+        public const int MinForegroundPollMs = 100;
+        public const int MinHoverPollMs = 50;
+        public const int FastDashboardScanIntervalMs = 1500;
+        public const int LowResourceScanIntervalMs = 1200;
+        public const int LowResourceForegroundPollMs = 500;
+        public const int LowResourceHoverPollMs = 250;
+        public const int LowResourceDashboardScanIntervalMs = 5000;
+
+        // Best-effort UI Automation event notifications. Polling remains the fallback, so a registration that hangs or
+        // fails only delays the fast path; it never removes a scan.
+        public const int EventWatchRegisterTimeoutMs = 1500;
+        // Floor between two event-triggered scan requests. The worker already allows one scan at a time, and the
+        // controller keeps at most one event-driven request pending, so an event storm cannot become a scan loop.
+        public const int EventWatchMinScanGapMs = 80;
+
+        // Diagnostics are bounded: a fixed number of timings and at most one summary line per interval.
+        public const int MetricSampleCapacity = 64;
+        // One statistics line at most every 15 s, or every 50 completed scans, whichever comes first. Both bounds
+        // keep the volume of the log linear, and the scan-count bound is what makes a short measurement window
+        // (the CI resource job samples 20 s) contain real numbers instead of an empty line.
+        public const int MetricsLogIntervalMs = 15000;
+        public const int MetricsLogScanCount = 50;
+
+        // Settings backup: the file is read into memory only up to this size, and only this schema is written.
+        public const int MaxSettingsBackupBytes = 256 * 1024;
+        public const int SettingsBackupSchema = 1;
+
+        // Appearance bounds. Opacity is applied as uniform window alpha, so it cannot change the hit area.
+        public const int DefaultButtonOpacityPercent = 100;
+        public const int MinButtonOpacityPercent = 30;
+        public const int MaxButtonOpacityPercent = 100;
+
+        // In-app notification surface: one non-activating, sound-free window instead of a Shell balloon or toast.
+        public const int NoticeWidthLogical = 360;
+        public const int NoticeMinHeightLogical = 76;
+        public const int NoticeAutoCloseMs = 7000;
+        public const int NoticeMarginLogical = 14;
 
         // Single-instance and cross-process names. Local\ keeps them per user session.
         public const string SingleInstanceMutexName = @"Local\Xtension.SingleInstance";
