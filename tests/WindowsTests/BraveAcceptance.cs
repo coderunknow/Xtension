@@ -87,7 +87,12 @@ namespace Xtension.Tests
                     Assert.IsTrue(started != null, "the shipped EXE wrote its startup line");
                     Assert.IsTrue(started.Contains("Icon: frames=9"), "the shipped EXE carries the nine-frame icon resource: " + started);
                     Assert.IsTrue(started.Contains("tray source=embedded"), "the shipped EXE uses the embedded icon for the tray: " + started);
-                    Assert.IsTrue(started.Contains("browsers=brave"), "the shipped EXE starts with the verified browser enabled: " + started);
+                    // The expected token comes from the product's own formatter, so the assertion cannot pass on a
+                    // typo in the log line and cannot break when the line is reworded. It fails if the shipped
+                    // default ever stops being the verified browser.
+                    string expectedBrowsers = "browsers " + BrowserCatalog.MaskTokenList(BrowserCatalog.Mask(BrowserKind.Brave));
+                    Assert.IsTrue(started.Contains(expectedBrowsers),
+                        "the shipped EXE starts with the verified browser enabled (expected '" + expectedBrowsers + "'): " + started);
                     Console.WriteLine("INFO shipped EXE icon and tray source: " + started);
 
                     for (int i = 0; i < 3; i++)
