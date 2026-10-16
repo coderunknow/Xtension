@@ -4,38 +4,25 @@ using System.Windows.Forms;
 
 namespace Xtension
 {
-    /// <summary>Read-only view of the controller for the dashboard and diagnostics. Snapshots are cheap value copies.</summary>
-    internal sealed class ActiveTabSnapshot
-    {
-        public bool Enabled;
-        public bool OverlayVisible;
-        public bool BraveInForeground;
-        public bool Stalled;
-        public OverlayVisibilityMode VisibilityMode;
-        public string IdleReason = string.Empty;
-        public string Notice = string.Empty;
-        public string HiddenReason = string.Empty;
-        /// <summary>Latest accepted scan. Null before the first scan or while the overlay is disabled.</summary>
-        public ScanResult Scan;
-    }
-
     /// <summary>
-    /// Owns the overlay state machine. All state is touched only on the UI thread. UI Automation runs on two worker
-    /// threads: one for periodic overlay scans and one for close validation, so a × click never waits behind a scan.
+    /// Owns the overlay state machine. All state is touched only on the UI thread. UI Automation runs on three worker
+    /// threads: one for periodic overlay scans, one for close validation so a × click never waits behind a scan, and
+    /// one for the dashboard's background scan so a slow diagnostics scan can never delay the scan that makes the ×
+    /// appear.
     ///
-    /// Safety model (unchanged by dev3):
-    /// - The overlay is shown only after a Ready scan of the current foreground Brave window.
+    /// Safety model (unchanged by dev4):
+    /// - The overlay is shown only after a Ready scan of the current foreground supported-browser window.
     /// - Every state change bumps an epoch. Results from an older epoch are discarded.
     /// - A click sends Ctrl+W only if a fresh scan confirms the click landed on the × of the one selected horizontal tab.
     /// - After a keystroke, the overlay is hidden and clicks are ignored for CloseCooldownMs.
     ///
-    /// dev3 additions:
-    /// - Visibility mode (always when safe, or only while the pointer is over the confirmed selected tab).
-    /// - Configurable × size and inset, applied to painting, placement, hit testing and close validation together.
-    /// - Change-gated view notification: a timer tick that changes nothing observable no longer rebuilds a snapshot
-    ///   or re-renders the windows.
-    /// - Hover mode skips UI Automation work while the pointer cannot be inside the horizontal tab strip. That can
-    ///   only delay showing the button; it never authorizes anything.
+    /// dev4 additions:
+    /// - Any browser the user enabled, identified by process image name, instead of one hard-coded executable.
+    /// - Event notifications (a browser tab becoming selected, and the Windows foreground/minimize events) request an
+    ///   earlier scan. They can only ask for a scan; they never decide eligibility and never authorise a close, and
+    ///   polling continues as the fallback when a source is unavailable.
+    /// - Bounded response-time statistics, so the diagnostics window and the CI measurement can show what the
+    ///   event-to-visible path really costs instead of assuming it.
     /// </summary>
     internal sealed class ActiveTabController : IDisposable
     {
@@ -43,20 +30,38 @@ namespace Xtension
         private readonly Control _invoker;
         private readonly ScanWorker _overlayWorker;
         private readonly ScanWorker _closeWorker;
+        private readonly ScanWorker _dashboardWorker;
+        private readonly ForegroundWatcher _foregroundWatcher;
+        private readonly TabSelectionWatcher _tabWatcher;
         private readonly HoverTracker _hover = new HoverTracker();
         private readonly AppSettings _settings;
+        private readonly ScanMetrics _metrics = new ScanMetrics();
+        private readonly Func<IntPtr, ScanResult> _scan;
 
         private volatile bool _disposed;
+        private readonly object _wakeGate = new object();
+        private bool _wakePending;
+        /// <summary>An event asked for a scan sooner than the configured interval. Cleared when a scan is submitted.</summary>
+        private bool _immediatePending;
+        private long _immediateAtMs = Clock.Never;
+        /// <summary>When the last eligibility-changing event arrived, for the event-to-visible measurement.</summary>
+        private long _eventAtMs = Clock.Never;
+
         private bool _enabled;
         private bool _dashboardVisible;
-        private bool _braveInForeground;
+        private bool _browserInForeground;
+        private BrowserKind _foregroundBrowser;
+        private bool _foregroundBrowserDisabled;
+        /// <summary>True when the foreground window belongs to a browser this build knows but does not support.</summary>
+        private bool _foregroundBrowserKnown;
+        private bool _ownWindowInForeground;
         private bool _stalled;
         private bool _stallLogged;
         private long _epoch;
         private long _nextRequestId;
         private IntPtr _foreground = IntPtr.Zero;
         private IntPtr _targetWindow = IntPtr.Zero;
-        private IntPtr _lastBraveWindow = IntPtr.Zero;
+        private IntPtr _lastBrowserWindow = IntPtr.Zero;
         private StringId _idleReason = StringId.IdleStarting;
         private StringId _notice = StringId.None;
         private ScanResult _latest;
@@ -65,19 +70,25 @@ namespace Xtension
         private long _lastOverlayRequestMs = Clock.Never;
         private long _lastDashboardRequestMs = Clock.Never;
         private long _lastConfirmedMs = Clock.Never;
+        private long _lastScanCompletedMs = Clock.Never;
+        private long _lastMetricsLogMs = Clock.Never;
+        /// <summary>Completed scans when the last statistics line was written, for the bounded secondary schedule.</summary>
+        private long _lastMetricsLogCompleted;
         private long _lastSentMs = Clock.Never;
         private bool _closeInFlight;
         private long _closeRequestId;
         private long _closeStartedMs = Clock.Never;
         private string _overlayFailure = string.Empty;
         private Rectangle _hoverRegion = Rectangle.Empty;
-        /// <summary>Hover mode: was the pointer inside the tab strip on the previous tick? Used to scan the moment the
-        /// pointer arrives instead of waiting out an interval that belongs to the previous state.</summary>
+        /// <summary>Rectangle the overlay was last placed and verified at, so a real move can be logged once.</summary>
+        private Rectangle _placedTarget = Rectangle.Empty;
+        private bool _placedVisible;
+        /// <summary>Hover mode: was the pointer inside the tab strip on the previous tick?</summary>
         private bool _stripPointerInside;
 
         // Last state that was pushed to the views, so an uneventful tick costs nothing.
         private IntPtr _notifiedForeground = new IntPtr(-1);
-        private bool _notifiedBrave;
+        private bool _notifiedBrowser;
         private bool _notifiedStalled;
         private bool _notifiedEnabled;
         private bool _notifiedCloseInFlight;
@@ -94,21 +105,54 @@ namespace Xtension
         public event Action<string> CloseFailed;
 
         public ActiveTabController(CloseButtonOverlay overlay, Control invoker, AppSettings settings)
+            : this(overlay, invoker, settings, null)
+        {
+        }
+
+        /// <summary>
+        /// Test seam: the scan delegate is private to the process and only a synthetic harness supplies one, so a test
+        /// can drive the state machine without a browser.
+        /// </summary>
+        internal ActiveTabController(CloseButtonOverlay overlay, Control invoker, AppSettings settings,
+            Func<IntPtr, ScanResult> scanOverride)
         {
             _overlay = overlay;
             _invoker = invoker;
             _settings = settings == null ? AppSettings.Defaults() : settings;
             _settings.Normalize();
             _enabled = _settings.OverlayEnabled;
+            _scan = scanOverride == null ? new Func<IntPtr, ScanResult>(ScanWindow) : scanOverride;
             _overlayWorker = new ScanWorker("Xtension UIA overlay scan", Post, ScanOverlay);
             _closeWorker = new ScanWorker("Xtension UIA close validation", Post, ScanOverlay);
+            _dashboardWorker = new ScanWorker("Xtension UIA dashboard scan", Post, ScanOverlay);
             _overlay.Clicked += OnOverlayClicked;
+            // Both event sources are best effort and are cleaned up in Dispose. A failure leaves polling only, which
+            // can delay the × and can never authorise anything.
+            _foregroundWatcher = new ForegroundWatcher();
+            _foregroundWatcher.Changed += OnForegroundEvent;
+            _tabWatcher = new TabSelectionWatcher(OnTabSelectionEvent);
+            _overlay.ApplyAppearance(_settings);
         }
 
         /// <summary>Scan delegate that carries the configured × geometry into every scan decision.</summary>
         private ScanResult ScanOverlay(IntPtr window)
         {
-            return UiaTabScanner.Scan(window, _settings.ButtonSizeLogical, _settings.ButtonInsetLogical);
+            return _scan(window);
+        }
+
+        private ScanResult ScanWindow(IntPtr window)
+        {
+            // The browser entry is resolved first and passed in, so the scanner can refuse a contract it does not
+            // implement instead of applying another browser's assumptions to the window.
+            BrowserDescriptor descriptor = ProcessIdentity.Descriptor(window, false);
+            if (descriptor == null || !BrowserCatalog.IsEnabled(_settings.Browsers, descriptor.Kind))
+            {
+                ScanResult refused = ScanResult.Idle(window, ScanOutcome.ContractUnimplemented,
+                    ScanMessageKey.BrowserUnimplemented);
+                refused.Dpi = NativeMethods.GetWindowDpi(window);
+                return refused;
+            }
+            return UiaTabScanner.Scan(window, descriptor, _settings.ButtonSizeLogical, _settings.ButtonInsetLogical);
         }
 
         /// <summary>Current effective settings copy. Callers must go through the Set* methods to apply changes.</summary>
@@ -117,7 +161,63 @@ namespace Xtension
             get { return _settings; }
         }
 
-        /// <summary>Called by the UI timer. Cheap when Brave is not in front.</summary>
+        /// <summary>Poll cadence for the current state and profile. Used to set the UI timer interval.</summary>
+        public int PollIntervalMs()
+        {
+            ProfileCadence cadence = Profiles.CadenceFor(_settings.Profile);
+            return _settings.VisibilityMode == OverlayVisibilityMode.HoverOnSelectedTab
+                ? cadence.HoverPollMs : cadence.ForegroundPollMs;
+        }
+
+        /// <summary>
+        /// Asks for a tick to run as soon as the UI thread can, because an event says the frame may have changed.
+        /// Requests are coalesced into one pending callback and one pending scan, so an event storm cannot turn into a
+        /// busy loop. This never bypasses a check: it only removes waiting time before the regular decision path.
+        /// </summary>
+        public void RequestImmediateTick()
+        {
+            if (_disposed) return;
+            _metrics.CountEvent();
+            long now = Clock.NowMs;
+            if (_eventAtMs == Clock.Never) _eventAtMs = now;
+            _immediatePending = true;
+            _immediateAtMs = now;
+            lock (_wakeGate)
+            {
+                if (_wakePending) return;
+                _wakePending = true;
+            }
+            if (_invoker == null || _invoker.IsDisposed || !_invoker.IsHandleCreated)
+            {
+                lock (_wakeGate) { _wakePending = false; }
+                return;
+            }
+            try
+            {
+                _invoker.BeginInvoke(new Action(delegate
+                {
+                    lock (_wakeGate) { _wakePending = false; }
+                    Tick();
+                }));
+            }
+            catch (Exception)
+            {
+                // A closed message loop only costs the fast path for this request; the timer still ticks.
+                lock (_wakeGate) { _wakePending = false; }
+            }
+        }
+
+        private void OnForegroundEvent()
+        {
+            RequestImmediateTick();
+        }
+
+        private void OnTabSelectionEvent()
+        {
+            RequestImmediateTick();
+        }
+
+        /// <summary>Called by the UI timer. Cheap when no supported browser is in front.</summary>
         public void Tick()
         {
             if (_disposed) return;
@@ -139,35 +239,43 @@ namespace Xtension
                 InvalidateConfirmation();
             }
 
-            bool isBrave = ProcessIdentity.IsBraveWindow(foreground);
-            // The minimized wording is only correct when the minimized window really is Brave (dev2 follow-up).
-            bool minimized = isBrave && foreground != IntPtr.Zero && NativeMethods.IsIconic(foreground);
-            bool available = isBrave && !minimized;
-            if (_braveInForeground != available)
+            BrowserKind browser = ProcessIdentity.GetBrowser(foreground);
+            bool supported = BrowserCatalog.IsSupported(browser);
+            bool browserEnabled = supported && BrowserCatalog.IsEnabled(_settings.Browsers, browser);
+            // The minimized wording is only correct when the minimized window really is a supported browser.
+            bool minimized = supported && foreground != IntPtr.Zero && NativeMethods.IsIconic(foreground);
+            bool available = browserEnabled && !minimized;
+            if (_browserInForeground != available || _foregroundBrowser != browser)
             {
                 _hover.Reset();
                 InvalidateConfirmation();
             }
-            _braveInForeground = available;
-            if (isBrave) _lastBraveWindow = foreground;
+            _browserInForeground = available;
+            _foregroundBrowser = browser;
+            _foregroundBrowserKnown = browser != BrowserKind.None;
+            _foregroundBrowserDisabled = supported && !browserEnabled;
+            _ownWindowInForeground = foreground != IntPtr.Zero && ProcessIdentity.IsOwnWindow(foreground);
+            if (supported) _lastBrowserWindow = foreground;
 
             if (!_enabled)
             {
                 HideOverlay();
                 _targetWindow = IntPtr.Zero;
                 ClearHoverRegion();
+                UpdateEventTarget(IntPtr.Zero);
                 CheckStall();
                 NotifyIfChanged();
                 return;
             }
 
-            if (!_braveInForeground)
+            if (!_browserInForeground)
             {
                 HideOverlay();
                 _targetWindow = IntPtr.Zero;
                 ClearHoverRegion();
                 _hover.Reset();
-                _idleReason = minimized ? StringId.IdleBraveMinimized : StringId.IdleBraveNotForeground;
+                UpdateEventTarget(IntPtr.Zero);
+                _idleReason = IdleReasonFor(minimized);
                 RequestDashboardScanIfVisible(now);
                 CheckStall();
                 NotifyIfChanged();
@@ -176,8 +284,9 @@ namespace Xtension
 
             _targetWindow = foreground;
             _idleReason = StringId.None;
+            UpdateEventTarget(foreground);
             // A window that just came to the front is a new thing to confirm: scan it now instead of waiting out the
-            // interval that belonged to the previous window. One extra scan per focus change, cadence unchanged.
+            // interval that belonged to the previous window.
             if (foregroundChanged) _lastOverlayRequestMs = Clock.Never;
 
             // Hide when the confirmation is older than the stale window (for example, a stalled UIA call).
@@ -190,17 +299,46 @@ namespace Xtension
             // The pointer gate is evaluated on every tick (it is what remembers where the pointer is), and the
             // interval that follows it is the effective one, so an arrival in the tab strip is served immediately.
             bool pointerAllowsScan = ShouldScanNow(foreground);
+            bool immediate = _immediatePending && !Clock.HasElapsed(_immediateAtMs, AppInfo.ScanStaleMs);
+            if (_immediatePending && !immediate) _immediatePending = false;
+            int interval = immediate ? AppInfo.EventWatchMinScanGapMs : EffectiveScanIntervalMs();
             if (!_closeInFlight && !_overlayWorker.IsBusy && pointerAllowsScan
-                && Clock.HasElapsed(_lastOverlayRequestMs, EffectiveScanIntervalMs()))
+                && Clock.HasElapsed(_lastOverlayRequestMs, interval))
             {
-                _lastOverlayRequestMs = now;
-                Submit(_overlayWorker, ScanKind.Overlay, foreground, Point.Empty);
+                // The interval timestamp only advances when the worker really accepted the request, so a refused
+                // request cannot silently cost a whole extra interval.
+                if (Submit(_overlayWorker, ScanLane.Overlay, foreground, Point.Empty))
+                {
+                    _lastOverlayRequestMs = now;
+                    if (immediate)
+                    {
+                        _immediatePending = false;
+                        _metrics.CountEventScanRequest();
+                    }
+                }
             }
 
             if (_settings.VisibilityMode == OverlayVisibilityMode.HoverOnSelectedTab) UpdateHoverVisibility(now);
 
+            LogMetricsIfDue(now);
             CheckStall();
             NotifyIfChanged();
+        }
+
+        private StringId IdleReasonFor(bool minimized)
+        {
+            if (minimized) return StringId.IdleBrowserMinimized;
+            if (_ownWindowInForeground) return StringId.IdleOwnWindow;
+            if (_foregroundBrowserDisabled) return StringId.IdleBrowserDisabled;
+            if (_foregroundBrowserKnown && !BrowserCatalog.IsSupported(_foregroundBrowser))
+                return StringId.IdleBrowserUnsupported;
+            return StringId.IdleBrowserNotForeground;
+        }
+
+        private void UpdateEventTarget(IntPtr window)
+        {
+            if (_tabWatcher == null) return;
+            _tabWatcher.SetTarget(window);
         }
 
         /// <summary>
@@ -223,16 +361,22 @@ namespace Xtension
             Rectangle strip = TabGeometry.GetTabStripRegion(windowBounds, NativeMethods.GetWindowDpi(window));
             if (strip.IsEmpty) return true;
             bool inside = strip.Contains(pointer);
-            if (inside && !_stripPointerInside) _lastOverlayRequestMs = Clock.Never;
+            if (inside && !_stripPointerInside)
+            {
+                // The user just asked for this tab with the pointer: serve the next scan immediately and start the
+                // event-to-visible measurement from here, so the diagnostic latency covers hover mode too.
+                _lastOverlayRequestMs = Clock.Never;
+                if (_eventAtMs == Clock.Never) _eventAtMs = Clock.NowMs;
+            }
             _stripPointerInside = inside;
             return _overlay.Visible || inside;
         }
 
         /// <summary>
-        /// Scan interval for the current state. While the pointer is inside the tab strip in hover mode the user is
-        /// working with the tab in front of them, so the loop runs at the documented minimum instead of waiting out
-        /// the full configured interval; outside the strip the configured interval applies unchanged. No deadline,
-        /// staleness window, budget or confirmation rule is affected.
+        /// Scan interval for the current state and the active profile. While the pointer is inside the tab strip in
+        /// hover mode the user is working with the tab in front of them, so the loop runs at the documented minimum
+        /// instead of waiting out the full configured interval. No deadline, staleness window, budget or confirmation
+        /// rule is affected.
         /// </summary>
         private int EffectiveScanIntervalMs()
         {
@@ -250,7 +394,7 @@ namespace Xtension
         {
             ScanResult result = _latest;
             bool eligible = _enabled
-                && _braveInForeground
+                && _browserInForeground
                 && !_stalled
                 && !_closeInFlight
                 && Clock.HasElapsed(_lastSentMs, AppInfo.CloseCooldownMs)
@@ -325,9 +469,37 @@ namespace Xtension
             _settings.ScanIntervalMs = milliseconds;
         }
 
+        /// <summary>Applies the browser selection. A change invalidates any confirmation from the previous set.</summary>
+        public void SetBrowsers(int browserMask)
+        {
+            int mask = browserMask & BrowserCatalog.SupportedMask();
+            if (mask == BrowserCatalog.NoBrowsers)
+            {
+                // Refuse rather than choose for the user: an empty selection would make the × unable to appear at all,
+                // and silently re-enabling a browser the user just cleared would be worse.
+                AppLog.Warn("No supported browser is enabled; the previous browser selection is kept.");
+                return;
+            }
+            if (_settings.Browsers == mask) return;
+            _settings.Browsers = mask;
+            InvalidateConfirmation();
+            AppLog.Info("Enabled browsers: " + BrowserCatalog.MaskTokenList(mask) + ".");
+            ForceNotify();
+        }
+
+        public void SetProfile(PerformanceProfile profile)
+        {
+            if (_settings.Profile == profile) return;
+            _settings.Profile = profile;
+            // The new cadence applies to the next decision, and an immediate tick makes that visible at once.
+            AppLog.Info("Performance profile set to " + Profiles.Token(profile) + ".");
+            RequestImmediateTick();
+            ForceNotify();
+        }
+
         /// <summary>
         /// Pushes the whole settings set into the controller. Every changed value is applied immediately, and a
-        /// geometry or mode change invalidates any pending validation.
+        /// geometry, mode, appearance or browser change invalidates any pending validation.
         /// </summary>
         public void ApplySettings(AppSettings settings)
         {
@@ -337,6 +509,9 @@ namespace Xtension
             SetScanIntervalMs(settings.ScanIntervalMs);
             SetButtonGeometry(settings.ButtonSizeLogical, settings.ButtonInsetLogical);
             SetVisibilityMode(settings.VisibilityMode);
+            SetBrowsers(settings.Browsers);
+            SetProfile(settings.Profile);
+            if (_overlay.ApplyAppearance(settings)) ForceNotify();
             SetEnabled(settings.OverlayEnabled);
         }
 
@@ -347,16 +522,40 @@ namespace Xtension
 
         public ActiveTabSnapshot GetSnapshot()
         {
+            long now = Clock.NowMs;
             ActiveTabSnapshot snapshot = new ActiveTabSnapshot();
             snapshot.Enabled = _enabled;
             snapshot.OverlayVisible = _overlay.Visible;
-            snapshot.BraveInForeground = _braveInForeground;
+            snapshot.SupportedBrowserInForeground = _browserInForeground;
+            snapshot.Browser = _foregroundBrowser;
+            snapshot.ForegroundBrowserDisabled = _foregroundBrowserDisabled;
+            snapshot.BrowserUnsupported = _foregroundBrowserKnown && !BrowserCatalog.IsSupported(_foregroundBrowser);
+            snapshot.OwnWindowInForeground = _ownWindowInForeground;
             snapshot.Stalled = _stalled;
             snapshot.VisibilityMode = _settings.VisibilityMode;
+            snapshot.Profile = _settings.Profile;
             snapshot.IdleReason = GetIdleReason();
             snapshot.Notice = Strings.Get(_notice);
             snapshot.Scan = _latest;
             snapshot.HiddenReason = GetHiddenReason();
+            snapshot.ConfirmationAgeMs = _lastConfirmedMs == Clock.Never ? -1 : now - _lastConfirmedMs;
+            snapshot.LastScanAgeMs = _lastScanCompletedMs == Clock.Never ? -1 : now - _lastScanCompletedMs;
+            snapshot.ScanStale = _lastScanCompletedMs == Clock.Never || Clock.HasElapsed(_lastScanCompletedMs, AppInfo.ScanStaleMs);
+            snapshot.Metrics = _metrics.Snapshot();
+            snapshot.OverlayWorker = Describe(_overlayWorker);
+            snapshot.CloseWorker = Describe(_closeWorker);
+            snapshot.DashboardWorker = Describe(_dashboardWorker);
+            snapshot.Watcher = _tabWatcher == null ? null : _tabWatcher.Snapshot();
+            snapshot.EffectiveSettings = SettingsSummary.Build(_settings);
+            snapshot.Settings = _settings.Copy();
+            return snapshot;
+        }
+
+        private static WorkerSnapshot Describe(ScanWorker worker)
+        {
+            WorkerSnapshot snapshot = new WorkerSnapshot();
+            snapshot.Busy = worker.IsBusy;
+            snapshot.RunningForMs = worker.RunningForMs();
             return snapshot;
         }
 
@@ -370,7 +569,7 @@ namespace Xtension
             if (_overlay.Visible) return string.Empty;
             if (!_enabled) return Strings.Get(StringId.HiddenOverlayDisabled);
             if (_stalled) return Strings.Get(StringId.HiddenStalled);
-            if (!_braveInForeground) return GetIdleReason();
+            if (!_browserInForeground) return GetIdleReason();
             if (_closeInFlight) return Strings.Get(StringId.HiddenCloseInFlight);
             if (!Clock.HasElapsed(_lastSentMs, AppInfo.CloseCooldownMs)) return Strings.Get(StringId.HiddenCooldown);
             if (!string.IsNullOrEmpty(_overlayFailure)) return Strings.Get(StringId.OverlayShowFailed, _overlayFailure);
@@ -383,18 +582,26 @@ namespace Xtension
 
         private void RequestDashboardScanIfVisible(long now)
         {
-            if (!_dashboardVisible || _lastBraveWindow == IntPtr.Zero) return;
-            if (!NativeMethods.IsWindow(_lastBraveWindow) || !ProcessIdentity.IsBraveWindow(_lastBraveWindow)) return;
-            if (_overlayWorker.IsBusy || !Clock.HasElapsed(_lastDashboardRequestMs, AppInfo.DashboardScanIntervalMs)) return;
+            if (!_dashboardVisible || _lastBrowserWindow == IntPtr.Zero) return;
+            if (!NativeMethods.IsWindow(_lastBrowserWindow) || !BrowserCatalog.IsSupported(ProcessIdentity.GetBrowser(_lastBrowserWindow)))
+                return;
+            ProfileCadence cadence = Profiles.CadenceFor(_settings.Profile);
+            if (_dashboardWorker.IsBusy || !Clock.HasElapsed(_lastDashboardRequestMs, cadence.DashboardScanIntervalMs)) return;
 
-            _lastDashboardRequestMs = now;
-            Submit(_overlayWorker, ScanKind.Dashboard, _lastBraveWindow, Point.Empty);
+            if (Submit(_dashboardWorker, ScanLane.Dashboard, _lastBrowserWindow, Point.Empty)) _lastDashboardRequestMs = now;
         }
 
-        private void Submit(ScanWorker worker, ScanKind kind, IntPtr window, Point clickScreen)
+        /// <summary>Submits a request and reports whether the worker accepted it (a lane holds one request at a time).</summary>
+        private bool Submit(ScanWorker worker, ScanLane lane, IntPtr window, Point clickScreen)
         {
-            ScanRequest request = new ScanRequest(++_nextRequestId, kind, _epoch, window, clickScreen);
-            worker.TrySubmit(request);
+            ScanRequest request = new ScanRequest(++_nextRequestId, lane, _epoch, window, clickScreen);
+            if (worker.TrySubmit(request))
+            {
+                _metrics.CountRequest();
+                return true;
+            }
+            _metrics.CountRefused();
+            return false;
         }
 
         /// <summary>Marshals a worker result to the UI thread. Never blocks the worker.</summary>
@@ -408,16 +615,30 @@ namespace Xtension
         {
             if (_disposed) return;
             ScanRequest request = completion.Request;
-            if (request.Kind == ScanKind.Close)
+            long delivered = Clock.NowMs;
+            if (request.Lane != ScanLane.Close)
+            {
+                long scanMs = completion.Result == null ? 0 : completion.Result.ElapsedMs;
+                long queued = request.WorkerStartMs == Clock.Never ? 0 : request.WorkerStartMs - request.StartedMs;
+                _metrics.Record(request.Lane, queued, scanMs, delivered - request.StartedMs);
+                if (completion.Result != null && completion.Result.Outcome == ScanOutcome.Error) _metrics.CountError();
+            }
+            if (request.Lane == ScanLane.Close)
             {
                 OnCloseValidated(completion);
                 return;
             }
 
-            // A result from an older state (different window, enable toggle, or keystroke) must not touch the overlay.
-            if (request.Epoch != _epoch) return;
-            if (!ScanSafety.IsFresh(request.StartedMs, Clock.NowMs, AppInfo.ScanStaleMs))
+            // A result from an older state (different window, enable toggle, browser selection or keystroke) must not
+            // touch the overlay.
+            if (request.Epoch != _epoch)
             {
+                _metrics.CountDiscarded();
+                return;
+            }
+            if (!ScanSafety.IsFresh(request.StartedMs, delivered, AppInfo.ScanStaleMs))
+            {
+                _metrics.CountStale();
                 InvalidateConfirmation();
                 // Preserve diagnostics, never authorization, even when a slow provider finally returns an error.
                 _latest = completion.Result;
@@ -426,17 +647,18 @@ namespace Xtension
                 return;
             }
 
-            if (request.Kind == ScanKind.Dashboard)
+            if (request.Lane == ScanLane.Dashboard)
             {
                 _latest = completion.Result;
+                _lastScanCompletedMs = delivered;
                 LogOutcomeIfChanged(completion.Result);
                 ForceNotify();
                 return;
             }
 
-            if (!_enabled || !_braveInForeground || _closeInFlight || request.Window != _targetWindow) return;
+            if (!_enabled || !_browserInForeground || _closeInFlight || request.Window != _targetWindow) return;
             if (NativeMethods.GetForegroundRootWindow() != request.Window || NativeMethods.IsIconic(request.Window)
-                || !ProcessIdentity.IsBraveWindow(request.Window))
+                || !BrowserCatalog.IsSupported(ProcessIdentity.GetBrowser(request.Window)))
             {
                 InvalidateConfirmation();
                 ForceNotify();
@@ -445,6 +667,7 @@ namespace Xtension
 
             ScanResult result = completion.Result;
             _latest = result;
+            _lastScanCompletedMs = delivered;
             bool coolingDown = !Clock.HasElapsed(_lastSentMs, AppInfo.CloseCooldownMs);
             if (result.Outcome == ScanOutcome.Ready && !coolingDown && !_stalled)
             {
@@ -491,8 +714,26 @@ namespace Xtension
             {
                 _overlayFailure = failure;
                 AppLog.WarnThrottled("overlay-show", failure);
+                _placedVisible = false;
+                return;
             }
-            else _overlayFailure = string.Empty;
+            _overlayFailure = string.Empty;
+            // One log line per real placement change: counts and timings only, never a title or a URL. This is what
+            // lets an external measurement compare its own clock with the moment the × became visible.
+            if (!_placedVisible || _placedTarget != target)
+            {
+                bool moved = _placedVisible;
+                _placedVisible = true;
+                _placedTarget = target;
+                long eventMs = _eventAtMs == Clock.Never ? -1 : Clock.NowMs - _eventAtMs;
+                if (eventMs >= 0)
+                {
+                    _metrics.RecordEventToVisible(eventMs);
+                    _eventAtMs = Clock.Never;
+                }
+                AppLog.Info("Overlay placement: " + (moved ? "moved" : "visible") + " (scanMs=" + result.ElapsedMs
+                    + (eventMs < 0 ? string.Empty : ", eventMs=" + eventMs) + ").");
+            }
         }
 
         /// <summary>
@@ -535,23 +776,26 @@ namespace Xtension
             }
 
             IntPtr foreground = NativeMethods.GetForegroundRootWindow();
-            if (foreground == IntPtr.Zero || foreground != _targetWindow || !ProcessIdentity.IsBraveWindow(foreground))
+            if (foreground == IntPtr.Zero || foreground != _targetWindow
+                || !BrowserCatalog.IsSupported(ProcessIdentity.GetBrowser(foreground, true)))
             {
-                AppLog.Info("Click ignored: Brave is no longer the foreground window.");
-                _notice = StringId.NoticeBraveNotForeground;
+                AppLog.Info("Click ignored: the target browser is no longer the foreground window.");
+                _notice = StringId.NoticeBrowserNotForeground;
                 ForceNotify();
                 return;
             }
 
             InvalidateConfirmation();
-            ScanRequest request = new ScanRequest(++_nextRequestId, ScanKind.Close, _epoch, foreground, screenPoint);
+            ScanRequest request = new ScanRequest(++_nextRequestId, ScanLane.Close, _epoch, foreground, screenPoint);
             if (!_closeWorker.TrySubmit(request))
             {
+                _metrics.CountRefused();
                 AppLog.Warn("Close validation lane was busy; the click was ignored.");
                 _notice = StringId.NoticeCloseLaneBusy;
                 ForceNotify();
                 return;
             }
+            _metrics.CountRequest();
             _closeRequestId = request.Id;
             _closeInFlight = true;
             _closeStartedMs = Clock.NowMs;
@@ -580,7 +824,10 @@ namespace Xtension
             check.EpochCurrent = true;
             check.ScannedWindow = request.Window;
             check.ForegroundNow = foreground;
-            check.ForegroundIsBrave = ProcessIdentity.IsBraveWindow(foreground, true);
+            // Fresh query: the decision must not rest on a cached identity.
+            BrowserKind foregroundBrowser = ProcessIdentity.GetBrowser(foreground, true);
+            check.ForegroundIsSupportedBrowser = BrowserCatalog.IsSupported(foregroundBrowser)
+                && BrowserCatalog.IsEnabled(_settings.Browsers, foregroundBrowser);
             check.Minimized = foreground != IntPtr.Zero && NativeMethods.IsIconic(foreground);
             check.BlockingModifierDown = KeyboardInjector.BlockingModifierDown();
             check.Scan = scan;
@@ -643,18 +890,26 @@ namespace Xtension
             _latest = null;
             _overlayFailure = string.Empty;
             _lastConfirmedMs = Clock.Never;
+            _placedTarget = Rectangle.Empty;
+            _placedVisible = false;
             ClearHoverRegion();
             HideOverlay();
         }
 
         private void HideOverlay()
         {
-            if (_overlay.Visible) _overlay.Hide();
+            if (_overlay.Visible)
+            {
+                _overlay.Hide();
+                if (_placedVisible) AppLog.Info("Overlay placement: hidden.");
+                _placedVisible = false;
+                _placedTarget = Rectangle.Empty;
+            }
         }
 
         private void CheckStall()
         {
-            long running = Math.Max(_overlayWorker.RunningForMs(), _closeWorker.RunningForMs());
+            long running = Math.Max(_overlayWorker.RunningForMs(), Math.Max(_closeWorker.RunningForMs(), _dashboardWorker.RunningForMs()));
             _stalled = running > AppInfo.ScanStallMs;
             if (_stalled)
             {
@@ -663,7 +918,9 @@ namespace Xtension
                 if (!_stallLogged)
                 {
                     _stallLogged = true;
-                    AppLog.Warn("UI Automation has not returned for more than " + AppInfo.ScanStallMs + " ms; the overlay stays hidden until Brave responds.");
+                    _metrics.CountStall();
+                    AppLog.Warn("UI Automation has not returned for more than " + AppInfo.ScanStallMs
+                        + " ms; the overlay stays hidden until the browser responds.");
                 }
             }
             else if (_stallLogged && running == 0)
@@ -673,8 +930,23 @@ namespace Xtension
             }
         }
 
+        /// <summary>At most one statistics line per interval, so long sessions cannot grow the log.</summary>
+        private void LogMetricsIfDue(long now)
+        {
+            long completed = _metrics.CompletedCount;
+            if (completed == 0) return;
+            bool due = Clock.HasElapsed(_lastMetricsLogMs, AppInfo.MetricsLogIntervalMs)
+                || completed - _lastMetricsLogCompleted >= AppInfo.MetricsLogScanCount;
+            if (!due) return;
+            _lastMetricsLogMs = now;
+            _lastMetricsLogCompleted = completed;
+            // Counters and timings only: no title, no URL, no provider text.
+            AppLog.Info("Scan metrics: " + _metrics.Snapshot().Describe() + ".");
+        }
+
         private void LogOutcomeIfChanged(ScanResult result)
         {
+            if (result == null) return;
             if (result.Outcome == _loggedOutcome && result.Error == _loggedError) return;
             _loggedError = result.Error;
             _loggedOutcome = result.Outcome;
@@ -688,7 +960,7 @@ namespace Xtension
         private bool HasUnnotifiedChange()
         {
             return _notifiedForeground != _foreground
-                || _notifiedBrave != _braveInForeground
+                || _notifiedBrowser != _browserInForeground
                 || _notifiedStalled != _stalled
                 || _notifiedEnabled != _enabled
                 || _notifiedCloseInFlight != _closeInFlight
@@ -702,7 +974,7 @@ namespace Xtension
         private void RememberNotifiedState()
         {
             _notifiedForeground = _foreground;
-            _notifiedBrave = _braveInForeground;
+            _notifiedBrowser = _browserInForeground;
             _notifiedStalled = _stalled;
             _notifiedEnabled = _enabled;
             _notifiedCloseInFlight = _closeInFlight;
@@ -739,8 +1011,15 @@ namespace Xtension
             if (_disposed) return;
             _disposed = true;
             _overlay.Clicked -= OnOverlayClicked;
+            if (_foregroundWatcher != null)
+            {
+                _foregroundWatcher.Changed -= OnForegroundEvent;
+                _foregroundWatcher.Dispose();
+            }
+            if (_tabWatcher != null) _tabWatcher.Dispose();
             _overlayWorker.Dispose();
             _closeWorker.Dispose();
+            _dashboardWorker.Dispose();
         }
     }
 }

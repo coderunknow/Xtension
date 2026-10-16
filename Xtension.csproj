@@ -21,6 +21,8 @@
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
     <NoWin32Manifest>false</NoWin32Manifest>
+    <!-- The ICON_GROUP embedded in the EXE, so Explorer and the taskbar show the shipped asset. -->
+    <ApplicationIcon>assets\xtension.ico</ApplicationIcon>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
@@ -54,6 +56,8 @@
     <Compile Include="src\Program.cs" />
     <Compile Include="src\Core\AppInfo.cs" />
     <Compile Include="src\Core\AppSettings.cs" />
+    <Compile Include="src\Core\PerformanceProfile.cs" />
+    <Compile Include="src\Core\BrowserCatalog.cs" />
     <Compile Include="src\Core\AppLog.cs" />
     <Compile Include="src\Core\AppPaths.cs" />
     <Compile Include="src\Core\Clock.cs" />
@@ -65,10 +69,15 @@
     <Compile Include="src\Core\TabGeometry.cs" />
     <Compile Include="src\Core\TabModels.cs" />
     <Compile Include="src\Core\TabSelector.cs" />
+    <Compile Include="src\Core\SettingsBackup.cs" />
+    <Compile Include="src\Core\DiagnosticsReport.cs" />
+    <Compile Include="src\Core\ScanMetrics.cs" />
     <Compile Include="src\Interop\KeyboardInjector.cs" />
     <Compile Include="src\Interop\NativeMethods.cs" />
     <Compile Include="src\Interop\ProcessIdentity.cs" />
+    <Compile Include="src\Interop\ForegroundWatcher.cs" />
     <Compile Include="src\Uia\UiaTabScanner.cs" />
+    <Compile Include="src\Uia\TabSelectionWatcher.cs" />
     <Compile Include="src\App\ActiveTabController.cs" />
     <Compile Include="src\App\ScanWorker.cs" />
     <Compile Include="src\App\SingleInstance.cs" />
@@ -80,12 +89,22 @@
     <Compile Include="src\UI\MainForm.cs" />
     <Compile Include="src\UI\SettingsForm.cs" />
     <Compile Include="src\UI\UiLayout.cs" />
+    <Compile Include="src\UI\NoticeWindow.cs" />
     <Compile Include="src\UI\TrayIcon.cs" />
+    <Compile Include="src\UI\AppIcon.cs" />
     <Compile Include="build\generated\VersionInfo.g.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The application and notification-area icon. LogicalName matches AppIcon.ResourceName. -->
+    <EmbeddedResource Include="assets\xtension.ico">
+      <LogicalName>Xtension.AppIcon.ico</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
     <None Include="app.manifest.template" />
     <None Include="VERSION" />
+    <None Include="assets\xtension-256.png" />
+    <None Include="tools\generate-icon.py" />
     <None Include="scripts\update-version.ps1" />
   </ItemGroup>
   <Target Name="GenerateVersion" BeforeTargets="BeforeBuild">

@@ -6,17 +6,20 @@ using System.Windows.Forms;
 namespace Xtension
 {
     /// <summary>
-    /// The dedicated Xtension Settings window. It owns no state of its own: every change is turned into an
-    /// <see cref="AppSettings"/> instance, handed to the host (which applies it to the controller and persists it),
-    /// and read back from the host, so the window, the dashboard, the tray menu and the overlay cannot disagree.
+    /// The dedicated Xtension Settings window, organised into four sections: General, Appearance, Performance and
+    /// Advanced. It owns no state of its own: every change is turned into an <see cref="AppSettings"/> instance,
+    /// handed to the host (which applies it to the controller and persists it) and read back from the host, so the
+    /// window, the dashboard, the tray menu and the overlay cannot disagree.
     ///
-    /// Discrete controls (check boxes, mode, numeric boxes) apply and save immediately. The size slider applies on a
+    /// Discrete controls (check boxes, radios, numeric boxes) apply and save immediately. The size slider applies on a
     /// short debounce while dragging and flushes the final value on mouse-up and when the window is hidden.
     /// </summary>
     internal sealed class SettingsForm : Form
     {
         private readonly ISettingsHost _host;
         private readonly List<Font> _fonts = new List<Font>();
+        private readonly List<CheckBox> _browserBoxes = new List<CheckBox>();
+        private readonly List<BrowserDescriptor> _browserDescriptors = new List<BrowserDescriptor>();
         private readonly Color _navy = Color.FromArgb(24, 34, 51);
         private readonly Color _text = Color.FromArgb(31, 41, 55);
         private readonly Color _muted = Color.FromArgb(100, 116, 139);
@@ -30,6 +33,17 @@ namespace Xtension
         private NumericUpDown _insetValue;
         private NumericUpDown _graceValue;
         private NumericUpDown _intervalValue;
+        private NumericUpDown _opacityValue;
+        private CheckBox _borderBox;
+        private RadioButton _colorDark;
+        private RadioButton _colorRed;
+        private RadioButton _colorBlue;
+        private RadioButton _colorGreen;
+        private RadioButton _profileBalanced;
+        private RadioButton _profileFast;
+        private RadioButton _profileLow;
+        private RadioButton _profileCustom;
+        private Label _profileSummary;
         private RadioButton _languageVietnamese;
         private RadioButton _languageEnglish;
         private CheckBox _startupBox;
@@ -55,7 +69,7 @@ namespace Xtension
             Font = _bodyFont;
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(400, 320);
-            Size = new Size(760, 720);
+            Size = new Size(780, 760);
             MaximizeBox = true;
             MinimizeBox = false;
             ShowInTaskbar = true;
@@ -85,11 +99,11 @@ namespace Xtension
                 UiLayout.Add(header, UiLayout.Localize(new WrappingLabel { ForeColor = Color.FromArgb(203, 213, 225) }, StringId.SettingsIntro));
                 UiLayout.Add(content, header);
 
-                BuildButtonGroup(content);
-                BuildVisibilityGroup(content);
-                BuildGeometryGroup(content);
-                BuildAdvancedGroup(content);
                 BuildGeneralGroup(content);
+                BuildAppearanceGroup(content);
+                BuildPerformanceGroup(content);
+                BuildBrowsersGroup(content);
+                BuildAdvancedGroup(content);
 
                 UiLayout.Add(content, UiLayout.Localize(new WrappingLabel
                 {
@@ -102,15 +116,9 @@ namespace Xtension
                 FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Padding = new Padding(0, 6, 0, 0) };
                 Button resetButton = CreateButton(StringId.SettingsReset, Color.FromArgb(254, 226, 226), Color.FromArgb(185, 28, 28));
                 resetButton.Click += delegate { ResetToDefaults(); };
-                Button diagnosticsButton = CreateButton(StringId.SettingsButtonDiagnostics, Color.FromArgb(226, 232, 240), _text);
-                diagnosticsButton.Click += delegate { if (_host != null) _host.ShowDiagnostics(); };
-                Button logButton = CreateButton(StringId.SettingsButtonLog, Color.FromArgb(226, 232, 240), _text);
-                logButton.Click += delegate { if (_host != null) _host.OpenLog(); };
                 Button closeButton = CreateButton(StringId.SettingsClose, Color.FromArgb(226, 232, 240), _text);
                 closeButton.Click += delegate { Close(); };
                 actions.Controls.Add(resetButton);
-                actions.Controls.Add(diagnosticsButton);
-                actions.Controls.Add(logButton);
                 actions.Controls.Add(closeButton);
                 UiLayout.Add(content, actions);
             }
@@ -122,6 +130,7 @@ namespace Xtension
                 PerformLayout();
             }
 
+            AppIcon.Attach(this);
             LoadFromHost();
             ApplyLanguage();
             Shown += delegate { UiLayout.FitToWorkingArea(this); };
@@ -143,9 +152,9 @@ namespace Xtension
             };
         }
 
-        private void BuildButtonGroup(TableLayoutPanel content)
+        private void BuildGeneralGroup(TableLayoutPanel content)
         {
-            TableLayoutPanel group = Group(content, StringId.SettingsGroupButton);
+            TableLayoutPanel group = Group(content, StringId.SettingsGroupGeneral);
             _enableBox = UiLayout.Localize(new WrappingCheckBox { AutoSize = true, ForeColor = _text }, StringId.SettingsEnable);
             _enableBox.CheckedChanged += delegate
             {
@@ -163,25 +172,73 @@ namespace Xtension
             };
             UiLayout.Add(group, _enableBox);
             UiLayout.Add(group, Help(StringId.SettingsEnableHelp));
+
+            UiLayout.Add(group, UiLayout.Localize(new WrappingLabel { ForeColor = _text }, StringId.SettingsLanguage));
+            _languageVietnamese = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.LanguageVietnamese);
+            _languageEnglish = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.LanguageEnglish);
+            _languageVietnamese.CheckedChanged += delegate { if (!_loading) LanguageChanged(); };
+            _languageEnglish.CheckedChanged += delegate { if (!_loading) LanguageChanged(); };
+            FlowLayoutPanel languageRow = RadioRow();
+            languageRow.Controls.Add(_languageVietnamese);
+            languageRow.Controls.Add(_languageEnglish);
+            UiLayout.Add(group, languageRow);
+
+            _startupBox = UiLayout.Localize(new WrappingCheckBox { AutoSize = true, ForeColor = _text, Margin = new Padding(0, 6, 0, 0) }, StringId.SettingsStartWithWindows);
+            _startupBox.CheckedChanged += delegate
+            {
+                if (_loading || _host == null) return;
+                _host.SetLaunchAtLogin(_startupBox.Checked);
+                _loading = true;
+                _startupBox.Checked = _host.LaunchAtLogin;
+                _loading = false;
+            };
+            UiLayout.Add(group, _startupBox);
+            UiLayout.Add(group, Help(StringId.SettingsStartupHelp));
         }
 
-        private void BuildVisibilityGroup(TableLayoutPanel content)
+        /// <summary>
+        /// Which browsers the × may appear in. Only browsers at or above their support level are listed, so the list a
+        /// user sees is the list this build can really confirm a selected tab for.
+        /// </summary>
+        private void BuildBrowsersGroup(TableLayoutPanel content)
         {
-            TableLayoutPanel group = Group(content, StringId.SettingsGroupVisibility);
+            TableLayoutPanel group = Group(content, StringId.SettingsGroupBrowsers);
+            foreach (BrowserDescriptor descriptor in BrowserCatalog.All)
+            {
+                if (!BrowserCatalog.IsSupported(descriptor.Kind)) continue;
+                CheckBox box = new WrappingCheckBox { AutoSize = true, ForeColor = _text };
+                UiLayout.Localize(box, StringId.SettingsBrowserRow, descriptor.DisplayName, SupportLabel(descriptor.Support));
+                box.CheckedChanged += delegate { if (!_loading) BrowsersChanged(); };
+                _browserBoxes.Add(box);
+                _browserDescriptors.Add(descriptor);
+                UiLayout.Add(group, box);
+            }
+            UiLayout.Add(group, Help(StringId.SettingsBrowsersHelp));
+        }
+
+        private static string SupportLabel(BrowserSupport support)
+        {
+            if (support == BrowserSupport.Verified) return Strings.Get(StringId.SupportVerified);
+            if (support == BrowserSupport.Experimental) return Strings.Get(StringId.SupportExperimental);
+            return Strings.Get(StringId.SupportUnsupported);
+        }
+
+        private void BuildAppearanceGroup(TableLayoutPanel content)
+        {
+            TableLayoutPanel group = Group(content, StringId.SettingsGroupAppearance);
+
+            UiLayout.Add(group, UiLayout.Localize(new WrappingLabel { Font = _groupFont, ForeColor = _muted, Padding = new Padding(0, 6, 0, 0) }, StringId.SettingsGroupVisibility));
             _modeAlways = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.SettingsModeAlways);
             _modeHover = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.SettingsModeHover);
             _modeAlways.CheckedChanged += delegate { if (!_loading) ModeChanged(); };
             _modeHover.CheckedChanged += delegate { if (!_loading) ModeChanged(); };
-            UiLayout.Add(group, _modeAlways);
-            UiLayout.Add(group, _modeHover);
+            FlowLayoutPanel modeRow = RadioRow();
+            modeRow.Controls.Add(_modeAlways);
+            modeRow.Controls.Add(_modeHover);
+            UiLayout.Add(group, modeRow);
             UiLayout.Add(group, Help(StringId.SettingsModeHelp));
-        }
 
-        private void BuildGeometryGroup(TableLayoutPanel content)
-        {
-            TableLayoutPanel group = Group(content, StringId.SettingsGroupSize);
-
-            UiLayout.Add(group, UiLayout.Localize(new WrappingLabel { ForeColor = _text }, StringId.SettingsSizeLabel));
+            UiLayout.Add(group, UiLayout.Localize(new WrappingLabel { Font = _groupFont, ForeColor = _muted, Padding = new Padding(0, 6, 0, 0) }, StringId.SettingsGroupSize));
             _sizeTrack = new TrackBar();
             _sizeTrack.Minimum = AppInfo.MinButtonSizeLogical;
             _sizeTrack.Maximum = AppInfo.MaxButtonSizeLogical;
@@ -195,6 +252,7 @@ namespace Xtension
             _sizeTrack.ValueChanged += delegate { if (!_loading) SizeChanged(); };
             // A drag applies on a short debounce; releasing the slider flushes the final value at once.
             _sizeTrack.MouseUp += delegate { FlushPendingChanges(); };
+            UiLayout.Add(group, UiLayout.Localize(new WrappingLabel { ForeColor = _text }, StringId.SettingsSizeLabel));
             UiLayout.Add(group, _sizeTrack);
 
             _sizeValue = new NumericUpDown();
@@ -206,41 +264,77 @@ namespace Xtension
 
             _insetValue = NumberRow(group, StringId.SettingsInsetLabel, AppInfo.MinButtonInsetLogical,
                 AppInfo.MaxButtonInsetLogical, 1, delegate { if (!_loading) ScheduleApply(); });
+            _graceValue = NumberRow(group, StringId.SettingsHoverGraceLabel, AppInfo.MinHoverGraceMs,
+                AppInfo.MaxHoverGraceMs, 50, delegate { if (!_loading) ScheduleApply(); });
             UiLayout.Add(group, Help(StringId.SettingsGeometryHelp));
+
+            UiLayout.Add(group, UiLayout.Localize(new WrappingLabel { ForeColor = _text, Padding = new Padding(0, 6, 0, 0) }, StringId.SettingsColorLabel));
+            _colorDark = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.ColorDark);
+            _colorRed = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.ColorRed);
+            _colorBlue = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.ColorBlue);
+            _colorGreen = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.ColorGreen);
+            FlowLayoutPanel colourRow = RadioRow();
+            foreach (RadioButton button in new RadioButton[] { _colorDark, _colorRed, _colorBlue, _colorGreen })
+            {
+                button.CheckedChanged += delegate { if (!_loading) ColorChanged(); };
+                colourRow.Controls.Add(button);
+            }
+            UiLayout.Add(group, colourRow);
+
+            _opacityValue = NumberRow(group, StringId.SettingsOpacityLabel, AppInfo.MinButtonOpacityPercent,
+                AppInfo.MaxButtonOpacityPercent, 5, delegate { if (!_loading) ScheduleApply(); });
+            _borderBox = UiLayout.Localize(new WrappingCheckBox { AutoSize = true, ForeColor = _text }, StringId.SettingsBorderLabel);
+            _borderBox.CheckedChanged += delegate { if (!_loading) ScheduleApply(); };
+            UiLayout.Add(group, _borderBox);
+            UiLayout.Add(group, Help(StringId.SettingsAppearanceHelp));
+        }
+
+        /// <summary>
+        /// Performance profiles. A preset only writes profile-controlled values (the scan interval); the store keeps
+        /// the individual values authoritative, so editing the interval afterwards is shown as "Custom" instead of
+        /// being reset to the preset on the next start.
+        /// </summary>
+        private void BuildPerformanceGroup(TableLayoutPanel content)
+        {
+            TableLayoutPanel group = Group(content, StringId.SettingsGroupPerformance);
+            UiLayout.Add(group, UiLayout.Localize(new WrappingLabel { ForeColor = _text }, StringId.SettingsProfileLabel));
+            _profileBalanced = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.ProfileBalanced);
+            _profileFast = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.ProfileFast);
+            _profileLow = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.ProfileLowResource);
+            _profileCustom = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.ProfileCustom);
+            FlowLayoutPanel profileRow = RadioRow();
+            foreach (RadioButton button in new RadioButton[] { _profileBalanced, _profileFast, _profileLow, _profileCustom })
+            {
+                button.CheckedChanged += delegate { if (!_loading) ProfileChanged(); };
+                profileRow.Controls.Add(button);
+            }
+            UiLayout.Add(group, profileRow);
+            _intervalValue = NumberRow(group, StringId.SettingsScanIntervalLabel, AppInfo.MinScanIntervalMs,
+                AppInfo.MaxScanIntervalMs, 50, delegate { if (!_loading) ScheduleApply(); });
+            _profileSummary = new WrappingLabel { ForeColor = _muted, Padding = new Padding(0, 4, 0, 0) };
+            UiLayout.Add(group, _profileSummary);
+            UiLayout.Add(group, Help(StringId.SettingsProfileHelp));
         }
 
         private void BuildAdvancedGroup(TableLayoutPanel content)
         {
             TableLayoutPanel group = Group(content, StringId.SettingsGroupAdvanced);
-            _graceValue = NumberRow(group, StringId.SettingsHoverGraceLabel, AppInfo.MinHoverGraceMs,
-                AppInfo.MaxHoverGraceMs, 50, delegate { if (!_loading) ScheduleApply(); });
-            _intervalValue = NumberRow(group, StringId.SettingsScanIntervalLabel, AppInfo.MinScanIntervalMs,
-                AppInfo.MaxScanIntervalMs, 50, delegate { if (!_loading) ScheduleApply(); });
+            FlowLayoutPanel row = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Padding = new Padding(0, 2, 0, 2) };
+            Button diagnosticsButton = CreateButton(StringId.SettingsButtonDiagnostics, Color.FromArgb(226, 232, 240), _text);
+            diagnosticsButton.Click += delegate { if (_host != null) _host.ShowDiagnostics(); };
+            Button logButton = CreateButton(StringId.SettingsButtonLog, Color.FromArgb(226, 232, 240), _text);
+            logButton.Click += delegate { if (_host != null) _host.OpenLog(); };
+            Button exportButton = CreateButton(StringId.SettingsBackupExport, Color.FromArgb(226, 232, 240), _text);
+            exportButton.Click += delegate { ExportBackup(); };
+            Button importButton = CreateButton(StringId.SettingsBackupImport, Color.FromArgb(226, 232, 240), _text);
+            importButton.Click += delegate { ImportBackup(); };
+            row.Controls.Add(diagnosticsButton);
+            row.Controls.Add(logButton);
+            row.Controls.Add(exportButton);
+            row.Controls.Add(importButton);
+            UiLayout.Add(group, row);
+            UiLayout.Add(group, Help(StringId.SettingsBackupHelp));
             UiLayout.Add(group, Help(StringId.SettingsAdvancedHelp));
-        }
-
-        private void BuildGeneralGroup(TableLayoutPanel content)
-        {
-            TableLayoutPanel group = Group(content, StringId.SettingsGroupGeneral);
-            UiLayout.Add(group, UiLayout.Localize(new WrappingLabel { ForeColor = _text }, StringId.SettingsLanguage));
-            _languageVietnamese = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.LanguageVietnamese);
-            _languageEnglish = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.LanguageEnglish);
-            _languageVietnamese.CheckedChanged += delegate { if (!_loading) LanguageChanged(); };
-            _languageEnglish.CheckedChanged += delegate { if (!_loading) LanguageChanged(); };
-            UiLayout.Add(group, _languageVietnamese);
-            UiLayout.Add(group, _languageEnglish);
-
-            _startupBox = UiLayout.Localize(new WrappingCheckBox { AutoSize = true, ForeColor = _text, Margin = new Padding(0, 6, 0, 0) }, StringId.SettingsStartWithWindows);
-            _startupBox.CheckedChanged += delegate
-            {
-                if (_loading || _host == null) return;
-                _host.SetLaunchAtLogin(_startupBox.Checked);
-                _loading = true;
-                _startupBox.Checked = _host.LaunchAtLogin;
-                _loading = false;
-            };
-            UiLayout.Add(group, _startupBox);
-            UiLayout.Add(group, Help(StringId.SettingsStartupHelp));
         }
 
         /// <summary>Reads the live values back from the host and shows them without triggering change handling.</summary>
@@ -259,9 +353,23 @@ namespace Xtension
                 _insetValue.Value = settings.ButtonInsetLogical;
                 _graceValue.Value = settings.HoverGraceMs;
                 _intervalValue.Value = settings.ScanIntervalMs;
+                _opacityValue.Value = settings.ButtonOpacityPercent;
+                _borderBox.Checked = settings.ButtonBorder;
+                _colorDark.Checked = settings.ButtonColor == OverlayColor.Dark;
+                _colorRed.Checked = settings.ButtonColor == OverlayColor.Red;
+                _colorBlue.Checked = settings.ButtonColor == OverlayColor.Blue;
+                _colorGreen.Checked = settings.ButtonColor == OverlayColor.Green;
+                _profileBalanced.Checked = settings.Profile == PerformanceProfile.Balanced;
+                _profileFast.Checked = settings.Profile == PerformanceProfile.Fast;
+                _profileLow.Checked = settings.Profile == PerformanceProfile.LowResource;
+                _profileCustom.Checked = settings.Profile == PerformanceProfile.Custom;
                 _languageVietnamese.Checked = settings.Language == AppLanguage.Vietnamese;
                 _languageEnglish.Checked = settings.Language == AppLanguage.English;
                 _startupBox.Checked = _host != null && _host.LaunchAtLogin;
+                for (int index = 0; index < _browserBoxes.Count; index++)
+                {
+                    _browserBoxes[index].Checked = BrowserCatalog.IsEnabled(settings.Browsers, _browserDescriptors[index].Kind);
+                }
             }
             finally
             {
@@ -296,6 +404,74 @@ namespace Xtension
             RefreshStatus();
         }
 
+        private void ColorChanged()
+        {
+            if (_colorDark.Checked || _colorRed.Checked || _colorBlue.Checked || _colorGreen.Checked) { }
+            else
+            {
+                // Keep exactly one colour selected.
+                _loading = true;
+                _colorDark.Checked = true;
+                _loading = false;
+            }
+            ScheduleApply();
+            RefreshStatus();
+        }
+
+        /// <summary>
+        /// Applies a selected preset through the host, then reads the result back. Selecting a preset never touches
+        /// the visibility mode, the geometry, the appearance, the language or the browser list.
+        /// </summary>
+        private void ProfileChanged()
+        {
+            if (_loading) return;
+            PerformanceProfile chosen = _profileFast.Checked ? PerformanceProfile.Fast
+                : _profileLow.Checked ? PerformanceProfile.LowResource
+                : _profileCustom.Checked ? PerformanceProfile.Custom
+                : PerformanceProfile.Balanced;
+            if (Profiles.IsPreset(chosen))
+            {
+                AppSettings settings = BuildSettings();
+                Profiles.ApplyTo(chosen, settings);
+                _loading = true;
+                try
+                {
+                    // Show the value the preset really selected, then read everything back from the host.
+                    _intervalValue.Value = settings.ScanIntervalMs;
+                }
+                finally
+                {
+                    _loading = false;
+                }
+                if (_host != null) _host.ApplySettings(settings);
+                LoadFromHost();
+                return;
+            }
+            ScheduleApply();
+            RefreshStatus();
+        }
+
+        private void BrowsersChanged()
+        {
+            int mask = BrowserCatalog.NoBrowsers;
+            for (int index = 0; index < _browserBoxes.Count; index++)
+            {
+                if (_browserBoxes[index].Checked) mask |= BrowserCatalog.Mask(_browserDescriptors[index].Kind);
+            }
+            if (mask == BrowserCatalog.NoBrowsers)
+            {
+                // At least one browser must stay selected, or the × could never appear at all.
+                _loading = true;
+                if (_browserBoxes.Count > 0) _browserBoxes[0].Checked = true;
+                _loading = false;
+                ScheduleApply();
+                RefreshStatus();
+                return;
+            }
+            ScheduleApply();
+            RefreshStatus();
+        }
+
         private void LanguageChanged()
         {
             if (_languageVietnamese.Checked == _languageEnglish.Checked)
@@ -320,6 +496,24 @@ namespace Xtension
             settings.HoverGraceMs = (int)_graceValue.Value;
             settings.ScanIntervalMs = (int)_intervalValue.Value;
             settings.Language = _languageEnglish.Checked ? AppLanguage.English : AppLanguage.Vietnamese;
+            settings.ButtonOpacityPercent = (int)_opacityValue.Value;
+            settings.ButtonBorder = _borderBox.Checked;
+            settings.ButtonColor = _colorRed.Checked ? OverlayColor.Red
+                : _colorBlue.Checked ? OverlayColor.Blue
+                : _colorGreen.Checked ? OverlayColor.Green
+                : OverlayColor.Dark;
+            int mask = BrowserCatalog.NoBrowsers;
+            for (int index = 0; index < _browserBoxes.Count; index++)
+            {
+                if (_browserBoxes[index].Checked) mask |= BrowserCatalog.Mask(_browserDescriptors[index].Kind);
+            }
+            if (mask != BrowserCatalog.NoBrowsers) settings.Browsers = mask;
+            // The profile marker is derived, never trusted: a preset whose value is no longer the stored one is custom.
+            PerformanceProfile marker = _profileFast.Checked ? PerformanceProfile.Fast
+                : _profileLow.Checked ? PerformanceProfile.LowResource
+                : _profileCustom.Checked ? PerformanceProfile.Custom
+                : PerformanceProfile.Balanced;
+            settings.Profile = Profiles.Resolve(marker, settings.ScanIntervalMs);
             settings.Normalize();
             return settings;
         }
@@ -338,8 +532,50 @@ namespace Xtension
             if (!_pendingApply) return;
             _pendingApply = false;
             if (_host == null) return;
-            _host.ApplySettings(BuildSettings());
+            AppSettings applied = BuildSettings();
+            _host.ApplySettings(applied);
+            // Editing a profile-controlled value turns the configuration into Custom. Showing that immediately keeps
+            // the radios from claiming a preset the stored values no longer match.
+            if (applied.Profile == PerformanceProfile.Custom && !_profileCustom.Checked)
+            {
+                _loading = true;
+                try { _profileCustom.Checked = true; }
+                finally { _loading = false; }
+            }
             RefreshStatus();
+        }
+
+        private void ExportBackup()
+        {
+            if (_host == null) return;
+            FlushPendingChanges();
+            using (SaveFileDialog dialog = new SaveFileDialog())
+            {
+                dialog.Title = Strings.Get(StringId.BackupExportTitle);
+                dialog.Filter = Strings.Get(StringId.BackupFileFilter);
+                dialog.FileName = "xtension-settings.ini";
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                // The result is shown in the window's own status line: no modal dialog is opened for a routine
+                // outcome, so a settings action can never steal focus from what the user is doing.
+                _status.Text = _host.ExportSettings(dialog.FileName);
+            }
+        }
+
+        private void ImportBackup()
+        {
+            if (_host == null) return;
+            FlushPendingChanges();
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Title = Strings.Get(StringId.BackupImportTitle);
+                dialog.Filter = Strings.Get(StringId.BackupFileFilter);
+                dialog.CheckFileExists = true;
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                _status.Text = _host.ImportSettings(dialog.FileName);
+                LoadFromHost();
+                UiLayout.ApplyLanguage(this);
+                RefreshStatus();
+            }
         }
 
         private void ResetToDefaults()
@@ -366,8 +602,23 @@ namespace Xtension
         {
             if (_status == null) return;
             AppSettings settings = BuildSettings();
+            // The line under the profile radios states which profile is really in force and at which cadence, so a
+            // value the user edited is reported as Custom instead of being presented as the preset they once picked.
+            if (_profileSummary != null)
+            {
+                _profileSummary.Text = Strings.Get(StringId.ProfileSummaryLine, ProfileText(settings.Profile),
+                    settings.ScanIntervalMs, Profiles.CadenceFor(settings.Profile).ForegroundPollMs);
+            }
             _status.Text = Strings.Get(settings.VisibilityMode == OverlayVisibilityMode.HoverOnSelectedTab
                 ? StringId.SettingsModeHover : StringId.SettingsModeAlways);
+        }
+
+        private static string ProfileText(PerformanceProfile profile)
+        {
+            if (profile == PerformanceProfile.Fast) return Strings.Get(StringId.ProfileFast);
+            if (profile == PerformanceProfile.LowResource) return Strings.Get(StringId.ProfileLowResource);
+            if (profile == PerformanceProfile.Custom) return Strings.Get(StringId.ProfileCustom);
+            return Strings.Get(StringId.ProfileBalanced);
         }
 
         /// <summary>Re-applies every localized text and the live values. Used after a language change.</summary>
@@ -375,7 +626,39 @@ namespace Xtension
         {
             UiLayout.ApplyLanguage(this);
             Text = AppInfo.ProductName + " - " + Strings.Get(StringId.SettingsTitle);
+            for (int index = 0; index < _browserBoxes.Count; index++)
+            {
+                LocalizedText text = _browserBoxes[index].Tag as LocalizedText;
+                if (text == null) continue;
+                _browserBoxes[index].Tag = new LocalizedText(StringId.SettingsBrowserRow, new object[]
+                {
+                    _browserDescriptors[index].DisplayName, SupportLabel(_browserDescriptors[index].Support)
+                });
+                UiLayout.ApplyLocalizedText(_browserBoxes[index]);
+            }
             RefreshStatus();
+        }
+
+        /// <summary>
+        /// One row that holds exactly one logical radio group. WinForms makes radio buttons mutually exclusive by
+        /// their parent container, so two unrelated groups that share a container uncheck each other: with the
+        /// visibility-mode radios and the colour radios in the same group, choosing a colour switched the mode back to
+        /// "always" without telling anybody. Each logical group therefore gets its own row.
+        ///
+        /// The row wraps, because the options must survive a narrow window and a large font. Without wrapping the row
+        /// is exactly as wide as the column allows and any option past that width is silently clipped - which is what
+        /// the harness caught at 100% and what the smallest supported window at 200% would have made much worse.
+        /// </summary>
+        private static FlowLayoutPanel RadioRow()
+        {
+            return new FlowLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = true,
+                Margin = new Padding(0, 2, 0, 2),
+                Padding = new Padding(0)
+            };
         }
 
         private TableLayoutPanel Group(TableLayoutPanel parent, StringId titleId)

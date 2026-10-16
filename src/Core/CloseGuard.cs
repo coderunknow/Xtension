@@ -9,11 +9,12 @@ namespace Xtension
         public bool OverlayEnabled;
         /// <summary>False when any state change (foreground, enable, previous send) happened after the click.</summary>
         public bool EpochCurrent;
-        /// <summary>The Brave window the validation scan examined.</summary>
+        /// <summary>The browser window the validation scan examined.</summary>
         public IntPtr ScannedWindow;
         /// <summary>Foreground root window read again at decision time.</summary>
         public IntPtr ForegroundNow;
-        public bool ForegroundIsBrave;
+        /// <summary>True when the foreground window is a browser this build confirms and the user enabled.</summary>
+        public bool ForegroundIsSupportedBrowser;
         public bool Minimized;
         /// <summary>True when Shift, Alt or Win is physically held. Ctrl+Shift+W would close the whole window.</summary>
         public bool BlockingModifierDown;
@@ -48,7 +49,9 @@ namespace Xtension
 
     /// <summary>
     /// Final gate before Ctrl+W. Pure and conservative: the click must land on the × that a fresh scan
-    /// places on the one confirmed selected horizontal tab, in the same foreground Brave window.
+    /// places on the one confirmed selected horizontal tab, in the same foreground supported-browser window.
+    /// Browser-specific providers may decide *which* window is the target; this gate and the rules below are the same
+    /// for every browser, so no provider can implement a weaker close path than the shared one.
     /// </summary>
     internal static class CloseGuard
     {
@@ -63,8 +66,8 @@ namespace Xtension
             if (request.BlockingModifierDown) return CloseDecision.Reject("Shift, Alt or Win is held; Ctrl+W would not be safe");
             if (request.ForegroundNow == IntPtr.Zero) return CloseDecision.Reject("no foreground window");
             if (request.ForegroundNow != request.ScannedWindow) return CloseDecision.Reject("foreground window changed");
-            if (!request.ForegroundIsBrave) return CloseDecision.Reject("foreground window is not Brave");
-            if (request.Minimized) return CloseDecision.Reject("Brave is minimized");
+            if (!request.ForegroundIsSupportedBrowser) return CloseDecision.Reject("foreground window is not a supported browser the user enabled");
+            if (request.Minimized) return CloseDecision.Reject("the browser window is minimized");
 
             ScanResult scan = request.Scan;
             if (scan == null) return CloseDecision.Reject("no validation scan");

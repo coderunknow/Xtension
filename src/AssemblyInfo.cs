@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 // Version attributes are generated from the VERSION file by scripts/update-version.ps1 (build/generated/VersionInfo.g.cs).
 [assembly: AssemblyTitle("Xtension")]
-[assembly: AssemblyDescription("Shows one close button on the selected Brave tab (Windows only, prerelease)")]
+[assembly: AssemblyDescription("Shows one close button on the selected browser tab (Windows only, prerelease)")]
 [assembly: AssemblyCompany("coderunknow")]
 [assembly: AssemblyProduct("Xtension")]
 [assembly: AssemblyCopyright("Copyright (c) 2026 coderunknow. MIT License.")]

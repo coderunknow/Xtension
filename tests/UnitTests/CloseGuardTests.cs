@@ -74,7 +74,7 @@ namespace Xtension.Tests
                 EpochCurrent = true,
                 ScannedWindow = Brave,
                 ForegroundNow = Brave,
-                ForegroundIsBrave = true,
+                ForegroundIsSupportedBrowser = true,
                 Minimized = false,
                 BlockingModifierDown = false,
                 Scan = scan,
@@ -158,7 +158,7 @@ namespace Xtension.Tests
         public static void NonBraveForegroundRejects()
         {
             CloseRequest request = ValidRequest();
-            request.ForegroundIsBrave = false;
+            request.ForegroundIsSupportedBrowser = false;
             Assert.IsFalse(CloseGuard.Evaluate(request).Allowed, "non-Brave foreground must reject");
         }
 

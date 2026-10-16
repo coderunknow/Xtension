@@ -5,7 +5,7 @@ namespace Xtension
     /// <summary>
     /// The screen region that makes the × eligible in hover mode: the confirmed selected tab, plus the × itself
     /// (which normally lies inside that tab). Nothing else is eligible, so the pointer being over another tab,
-    /// Brave's title bar, the Windows taskbar or another application can never show the button.
+    /// the browser's title bar, the Windows taskbar or another application can never show the button.
     /// </summary>
     internal static class HoverRegion
     {
@@ -25,7 +25,7 @@ namespace Xtension
 
     /// <summary>
     /// Pure hover transition state machine for hover mode. It only decides visibility; eligibility (foreground
-    /// Brave window, fresh Ready scan, no stall, no cooldown, overlay enabled) is decided by the caller, so a
+    /// browser window, fresh Ready scan, no stall, no cooldown, overlay enabled) is decided by the caller, so a
     /// hover decision can never authorize a close on its own.
     ///
     /// Transitions:

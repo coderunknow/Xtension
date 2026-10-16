@@ -19,8 +19,8 @@ namespace Xtension
         bool LaunchAtLogin { get; }
 
         /// <summary>
-        /// Asks to turn the custom × on or off. Turning it off shows the warning about Brave's own close buttons and
-        /// may be cancelled, so the returned value is the effective state, not the requested one.
+        /// Asks to turn the custom × on or off. Turning it off shows the warning about the browser's own close buttons
+        /// and may be cancelled, so the returned value is the effective state, not the requested one.
         /// </summary>
         bool RequestOverlayEnabled(bool enabled);
 
@@ -29,6 +29,15 @@ namespace Xtension
 
         /// <summary>Writes one registry Run entry, or removes it. Never throws; reports its own failure.</summary>
         void SetLaunchAtLogin(bool enabled);
+
+        /// <summary>Writes a settings backup to a path and returns the sentence to show the user.</summary>
+        string ExportSettings(string path);
+
+        /// <summary>
+        /// Validates and applies a settings backup. The current configuration is kept when anything fails, and the
+        /// returned sentence tells the user what was applied, rejected or preserved.
+        /// </summary>
+        string ImportSettings(string path);
 
         void ShowDiagnostics();
 

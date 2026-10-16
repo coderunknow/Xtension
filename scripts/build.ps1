@@ -36,6 +36,8 @@ try {
     if (Test-Path -LiteralPath $output) { Remove-Item -LiteralPath $output -Force }
 
     $uia = Get-UiaReferences $framework
+    $icon = Join-Path $root 'assets\xtension.ico'
+    if (-not (Test-Path -LiteralPath $icon)) { throw 'assets\xtension.ico is missing; run tools/generate-icon.py.' }
     $version = (Get-Content -LiteralPath (Join-Path $root 'VERSION') -Raw).Trim()
     Write-Host "Building Xtension $version for Windows $Arch with $csc"
 
@@ -43,6 +45,8 @@ try {
         '/nologo', '/codepage:65001', '/target:winexe', '/optimize+',
         '/debug:pdbonly', '/langversion:5', '/warn:4',
         "/platform:$Arch", "/win32manifest:$manifest",
+        "/win32icon:$icon",
+        "/resource:$icon,Xtension.AppIcon.ico",
         '/r:System.dll', '/r:System.Core.dll', '/r:System.Drawing.dll', '/r:System.Windows.Forms.dll',
         "/r:$($uia[2])", "/r:$($uia[0])", "/r:$($uia[1])",
         "/out:$output"

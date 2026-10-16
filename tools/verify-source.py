@@ -11,6 +11,7 @@ Usage: python3 tools/verify-source.py   (exit code 0 = all rules pass)
 """
 import pathlib
 import re
+import struct
 import subprocess
 import sys
 
@@ -22,7 +23,8 @@ REQUIRED = [
     'Xtension.csproj', 'app.manifest.template', '.gitignore', '.gitattributes',
     'scripts/build.ps1', 'scripts/test.ps1', 'scripts/toolchain.ps1', 'scripts/update-version.ps1',
     'scripts/verify-source.ps1', 'scripts/package.ps1', 'scripts/measure-performance.ps1',
-    'docs/RELEASE_CAPABILITIES.md', 'docs/DEV3_AUDIT.md',
+    'docs/RELEASE_CAPABILITIES.md', 'docs/DEV3_AUDIT.md', 'docs/DEV4_AUDIT.md',
+    'assets/xtension.ico', 'assets/xtension-256.png', 'tools/generate-icon.py',
     'tests/UnitTests/TestFramework.cs', 'tests/UnitTests/Program.cs',
     '.github/workflows/ci.yml', '.github/workflows/release.yml',
 ]
@@ -99,6 +101,65 @@ def main():
         failures.append('Xtension.csproj must set LangVersion 5.')
     if '<TargetFrameworkVersion>v4.8</TargetFrameworkVersion>' not in csproj:
         failures.append('Xtension.csproj must target v4.8.')
+
+    # The application icon: one multi-size resource, embedded under the name the loader asks for, referenced by both
+    # build scripts. A missing or renamed resource would silently fall back to the painted tray icon, which is exactly
+    # the "crisp small sizes" requirement failing quietly.
+    icon_path = ROOT / 'assets/xtension.ico'
+    if icon_path.is_file():
+        data = icon_path.read_bytes()
+        if len(data) < 22 or data[0] != 0 or data[1] != 0 or data[2] != 1 or data[3] != 0:
+            failures.append('assets/xtension.ico is not a Windows icon file.')
+        else:
+            count = struct.unpack_from('<H', data, 4)[0]
+            documented = {16, 20, 24, 32, 40, 48, 64, 128, 256}
+            sizes = set()
+            for index in range(count):
+                if 22 + 16 * index > len(data):
+                    failures.append('assets/xtension.ico is truncated.')
+                    break
+                width, height, colours, reserved, planes, bits, length, offset = struct.unpack_from('<BBBBHHII', data, 6 + 16 * index)
+                sizes.add(width or 256)
+                if bits != 32:
+                    failures.append('assets/xtension.ico frame %d is not a 32-bit image.' % (width or 256))
+                if offset + length > len(data):
+                    failures.append('assets/xtension.ico frame %d runs past the end of the file.' % (width or 256))
+            if count != len(documented):
+                failures.append('assets/xtension.ico must contain the %d documented sizes (found %d).' % (len(documented), count))
+            if sizes != documented:
+                failures.append('assets/xtension.ico sizes are %s, expected %s.' % (sorted(sizes), sorted(documented)))
+    icon_loader = sources.get('src\\UI\\AppIcon.cs', '')
+    resource_name = None
+    match = re.search(r'ResourceName\s*=\s*"([^"]+)"', icon_loader)
+    if match:
+        resource_name = match.group(1)
+    if not resource_name:
+        failures.append('src/UI/AppIcon.cs must declare the resource name it loads.')
+    elif '<LogicalName>%s</LogicalName>' % resource_name not in csproj:
+        failures.append('Xtension.csproj must embed assets/xtension.ico as %s.' % resource_name)
+    if 'assets\\xtension.ico' not in csproj:
+        failures.append('Xtension.csproj must reference assets/xtension.ico.')
+    for script in ('scripts/build.ps1', 'scripts/test-windows.ps1'):
+        text = (ROOT / script).read_text(encoding='utf-8')
+        if '/resource:' not in text or '/win32icon:' not in text or 'assets\\xtension.ico' not in text:
+            failures.append('%s must embed the application icon resource.' % script)
+
+    # Multi-platform claims: the product is Windows-only, and no document may advertise a platform that has no
+    # implementation. Every line that names macOS or Linux has to carry one of the negative markers below, so a future
+    # optimistic sentence fails this check instead of shipping as an unverified claim.
+    negative = ('not supported', 'unsupported', 'blocked', 'not implemented', 'not verified', 'cannot', 'no ',
+                'nothing', 'would ', 'plan', 'limit', 'deferred', 'without')
+    for name in ('README.md', 'CHANGELOG.md', 'docs/RELEASE_CAPABILITIES.md', 'docs/DEV3_AUDIT.md', 'docs/DEV4_AUDIT.md'):
+        path = ROOT / name
+        if not path.is_file():
+            continue
+        for number, line in enumerate(path.read_text(encoding='utf-8').split('\n'), 1):
+            if 'macOS' not in line and 'Linux' not in line:
+                continue
+            lowered = line.lower()
+            if not any(marker in lowered for marker in negative):
+                failures.append('%s line %d names a platform without stating that it is not supported: %s'
+                                % (name, number, line.strip()[:120]))
 
     harness = (ROOT / 'scripts/test-windows.ps1').read_text(encoding='utf-8')
     for path in sorted((ROOT / 'tests/WindowsTests').glob('*.cs')):

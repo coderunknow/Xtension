@@ -27,6 +27,8 @@ try {
     foreach ($line in $results) {
         if ($line -like 'PASS *' -or $line -like 'Brave binary*') { $evidence.Add($line) | Out-Null }
         elseif ($line -like 'FAIL *') { Write-Host ("::error title=Real Brave evidence::" + $line) }
+        # Latency evidence is counters and milliseconds only; it carries no title, URL or provider text.
+        elseif ($line -like 'INFO latency *') { Write-Host ("::notice title=Latency evidence::" + $line) }
         # Do not forward browser stderr/provider text to persistent workflow logs.
     }
     Write-Host ("::notice title=Real Brave evidence::" + ($evidence -join " | "))

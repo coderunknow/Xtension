@@ -9,8 +9,8 @@ namespace Xtension
     {
         /// <summary>No scan has run for the current state.</summary>
         Idle,
-        /// <summary>Brave is not the foreground window, so nothing is scanned for the overlay.</summary>
-        BraveNotForeground,
+        /// <summary>No supported browser is the foreground window, so nothing is scanned for the overlay.</summary>
+        BrowserNotForeground,
         /// <summary>The window has no usable bounds or UI Automation returned no root element.</summary>
         WindowUnavailable,
         /// <summary>The scan hit a budget or lost an element mid-walk, so the tab set is incomplete.</summary>
@@ -26,7 +26,12 @@ namespace Xtension
         /// <summary>Exactly one selected horizontal tab was confirmed. The only outcome that may show the overlay.</summary>
         Ready,
         /// <summary>A UI Automation call has not returned for longer than the stall threshold.</summary>
-        Stalled
+        Stalled,
+        /// <summary>
+        /// The window belongs to a browser whose accessibility contract this build does not implement, so its tab
+        /// strip is never read and its selected tab is never guessed.
+        /// </summary>
+        ContractUnimplemented
     }
 
     /// <summary>
@@ -48,7 +53,8 @@ namespace Xtension
         WindowBoundsUnavailable,
         WindowRootUnavailable,
         ScanFailed,
-        WorkerFailed
+        WorkerFailed,
+        BrowserUnimplemented
     }
 
     /// <summary>One TabItem read from UI Automation. Name is for on-screen diagnostics only.</summary>
@@ -63,13 +69,13 @@ namespace Xtension
         public int Depth;
     }
 
-    /// <summary>Result of one bounded scan of a Brave window.</summary>
+    /// <summary>Result of one bounded scan of one browser window.</summary>
     internal sealed class ScanResult
     {
         public ScanOutcome Outcome = ScanOutcome.Idle;
         /// <summary>Localized sentence describing this result. Derived on demand from <see cref="Key"/>.</summary>
         public ScanMessageKey Key = ScanMessageKey.None;
-        /// <summary>Top-level Brave window this scan examined.</summary>
+        /// <summary>Top-level browser window this scan examined.</summary>
         public IntPtr Window = IntPtr.Zero;
         public int Dpi = TabGeometry.BaseDpi;
         public Rectangle WindowBounds;

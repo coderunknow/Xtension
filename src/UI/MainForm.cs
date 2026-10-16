@@ -38,7 +38,7 @@ namespace Xtension
         private bool _haveRendered;
         private bool _lastEnabled;
         private bool _lastVisible;
-        private bool _lastBrave;
+        private bool _lastBrowser;
         private bool _lastStalled;
         private OverlayVisibilityMode _lastMode;
         private ScanOutcome _lastOutcome;
@@ -150,6 +150,7 @@ namespace Xtension
             UiLayout.Add(content, _notice);
             _footer = UiLayout.Localize(new WrappingLabel { Padding = new Padding(0, 10, 0, 0), ForeColor = _muted }, StringId.Footer, AppInfo.DisplayVersion);
             UiLayout.Add(content, _footer);
+            AppIcon.Attach(this);
             Shown += delegate { UiLayout.FitToWorkingArea(this); };
 
             FormClosing += OnFormClosing;
@@ -187,7 +188,7 @@ namespace Xtension
             if (_haveRendered
                 && _lastEnabled == snapshot.Enabled
                 && _lastVisible == snapshot.OverlayVisible
-                && _lastBrave == snapshot.BraveInForeground
+                && _lastBrowser == snapshot.SupportedBrowserInForeground
                 && _lastStalled == snapshot.Stalled
                 && _lastMode == snapshot.VisibilityMode
                 && _lastOutcome == (scan == null ? ScanOutcome.Idle : scan.Outcome)
@@ -200,7 +201,7 @@ namespace Xtension
             _haveRendered = true;
             _lastEnabled = snapshot.Enabled;
             _lastVisible = snapshot.OverlayVisible;
-            _lastBrave = snapshot.BraveInForeground;
+            _lastBrowser = snapshot.SupportedBrowserInForeground;
             _lastStalled = snapshot.Stalled;
             _lastMode = snapshot.VisibilityMode;
             _lastOutcome = scan == null ? ScanOutcome.Idle : scan.Outcome;
@@ -232,11 +233,11 @@ namespace Xtension
                 _headline.Text = Strings.Get(StringId.HeadlineActive);
                 detail = Strings.Get(StringId.DetailActive);
             }
-            else if (!snapshot.BraveInForeground)
+            else if (!snapshot.SupportedBrowserInForeground)
             {
-                _badge.Text = Strings.Get(StringId.BadgeWaitingBrave);
+                _badge.Text = Strings.Get(StringId.BadgeWaitingBrowser);
                 _badge.ForeColor = _muted;
-                _headline.Text = Strings.Get(StringId.HeadlineWaitingBrave);
+                _headline.Text = Strings.Get(StringId.HeadlineWaitingBrowser);
                 detail = snapshot.IdleReason;
             }
             else if (ready)

@@ -67,10 +67,12 @@ function Invoke-Measurement {
     Stop-Xtension
     $arguments = @('--measure', $Binary, "$Seconds", "$Label-$Scenario")
     if ($BravePath) { $arguments += @($BravePath, $ProfilePath) }
+    # The harness reads the log bytes this run appended and prints one MEASURE-LATENCY line; the script only has to
+    # record and annotate it, so no second copy of the log offset is kept here.
     $lines = @(& $harness @arguments 2>&1 | ForEach-Object { "$_" })
     $code = $LASTEXITCODE
     foreach ($line in $lines) {
-        if ($line -like 'MEASURE label=*') {
+        if ($line -like 'MEASURE label=*' -or $line -like 'MEASURE-LATENCY label=*') {
             Write-Host $line
             Add-Content -LiteralPath $report -Value $line
             # The report travels as a download; an annotation travels to the checks page. Neither the label nor the

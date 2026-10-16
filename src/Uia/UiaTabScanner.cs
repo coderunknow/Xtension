@@ -6,7 +6,13 @@ using System.Windows.Automation;
 namespace Xtension
 {
     /// <summary>
-    /// Bounded, read-only UI Automation walk of a Brave window. Must run on a worker thread, never on the UI thread.
+    /// Bounded, read-only UI Automation walk of one browser window. Must run on a worker thread, never on the UI
+    /// thread.
+    ///
+    /// The walk is only entered through an explicit <see cref="TabAccessContract"/>: the caller passes the catalog
+    /// entry for the window it verified, and a browser whose contract this scanner does not implement is refused
+    /// outright. That is what stops a Chromium window that merely looks like Brave from being scanned with Brave's
+    /// assumptions, and it is what a new browser has to implement instead of inheriting.
     /// It reads TabItem elements and never descends into a tab, page content (Document) or text input (Edit).
     /// Properties are prefetched through an explicit CacheRequest on every navigation operation; the request is
     /// created and released inside the scan (only the activation returned by Activate() is disposable in
@@ -32,7 +38,32 @@ namespace Xtension
             }
         }
 
+        /// <summary>
+        /// Scans a window after resolving its identity and contract from the process image name. Used by callers that
+        /// only hold a window handle; the resolution never looks at a title or a window class.
+        /// </summary>
         public static ScanResult Scan(IntPtr window, int sizeLogical, int insetLogical)
+        {
+            return Scan(window, ProcessIdentity.Descriptor(window, false), sizeLogical, insetLogical);
+        }
+
+        /// <summary>
+        /// Scans a window whose browser entry the caller already verified, and refuses every contract this build does
+        /// not implement. Refusing returns no tabs and no selected tab, so nothing downstream can authorise anything.
+        /// </summary>
+        public static ScanResult Scan(IntPtr window, BrowserDescriptor descriptor, int sizeLogical, int insetLogical)
+        {
+            if (descriptor == null || !BrowserCatalog.IsImplemented(descriptor.Contract))
+            {
+                ScanResult refused = ScanResult.Idle(window, ScanOutcome.ContractUnimplemented,
+                    ScanMessageKey.BrowserUnimplemented);
+                refused.Dpi = NativeMethods.GetWindowDpi(window);
+                return refused;
+            }
+            return ScanWindow(window, sizeLogical, insetLogical);
+        }
+
+        private static ScanResult ScanWindow(IntPtr window, int sizeLogical, int insetLogical)
         {
             ScanResult result = new ScanResult();
             result.Window = window;

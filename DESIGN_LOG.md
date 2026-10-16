@@ -226,3 +226,179 @@ the setting is lag at the opening. Finally merge and tag release. Audit carefull
   merged the same way), push `v0.1.0-dev3` on the merged commit, and let the existing tag-triggered workflow build both
   architectures and publish the prerelease with the two EXEs, the source zip and `SHA256SUMS.txt`. Evidence for every
   step is recorded in `AGENTS_LOG.md`.
+
+## Entry 016 — dev4 request: real-time ×, stability, browsers, platforms, icon, profiles, diagnostics (2026-10-16)
+
+Owner request, quoted verbatim (abridged only where the prompt repeats itself; the full text is the task prompt):
+
+> "Xtension v0.1.0-dev4 — Full Repository Audit, Real-Time ×, Stability, Multi-Browser, Platform Expansion &
+> Verified Prerelease … 1. Fix the delay before the × appears and any defects that prevent it from appearing when the
+> intended tab is safely identifiable. 2. Improve runtime stability, failure recovery, resource consumption…
+> 3. Add useful configurable performance profiles, more informative diagnostics, appearance customization, and safe
+> settings backup and restoration. 4. Conduct a repository-wide defect and maintainability audit… 5. Expand browser
+> support beyond Brave… 6. Address the requested expansion to multiple desktop operating systems without breaking the
+> existing Windows application or falsely advertising unsupported platforms. 7. Add a professional, recognizable
+> application icon… 8. Verify all material claims through executable tests, GitHub Actions, real-browser smoke tests,
+> and reproducible measurements. 9. Merge and publish `v0.1.0-dev4` as a prerelease only after the release gates …
+> pass." — plus an additional issue: "audio from a video currently playing becomes briefly distorted or crackles
+> whenever Xtension displays a notification popup window … Identify and verify the actual cause before changing the
+> implementation … Do not claim the issue is fixed unless the result has been verified during actual audio playback."
+
+**Baseline inspected before any edit** (entry 001–015 read in full; nothing rewritten):
+
+- `main` at `50fbb2c9f93d1880f772fc6cc03fcf4fce8fa812` (merge commit of PR #3). Working tree clean. Only tag on the
+  remote: `v0.1.0-dev3`. Published releases: `v0.1.0-dev1`, `v0.1.0-dev2`, `v0.1.0-dev3`, all prereleases, none latest.
+- `VERSION` was `0.1.0-dev3`; the dev4 work starts from that commit, and dev4 branch is
+  `arena/9ec9bbb9-xtension` branched from that commit.
+- The dev3 candidate is the comparison baseline for measurements (`v0.1.0-dev3` published x64 EXE, checksum-verified by
+  the existing performance job, which still pointed at `v0.1.0-dev2` and is corrected here).
+
+**Decisions taken for dev4** (each with the reason it was chosen over the alternative):
+
+- **Latency is attacked at the event, not at the interval.** dev3's fast path was still a *timer* path: an arrival in
+  the tab strip or a new foreground window cleared the interval, but a *tab switch* had to wait out the configured scan
+  interval (300–2000 ms, default 500 ms) before the × followed the selection. dev4 adds two bounded event sources —
+  a UI Automation `SelectionItemPattern.ElementSelectedEvent` subscription on the confirmed browser window and a
+  `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` notification — that only *ask for an earlier scan*; they can never
+  authorise one, and polling remains the fallback when a provider denies, fails or stops sending events. The scan
+  budgets, staleness window, close-validation deadline, epoch rule, cooldown and confirmation rules are unchanged.
+- **The interval accounting bug is fixed rather than hidden.** `Tick()` advanced the "last scan request" timestamp
+  before knowing whether the worker accepted the request, so a request refused because a scan was still running cost a
+  full extra interval. The timestamp now advances only when the request is accepted.
+- **The dashboard gets its own scan lane.** The dashboard's background scan of a non-foreground browser shared the
+  overlay lane, and because a lane holds one request, a slow background scan could delay the scan that makes the ×
+  appear. The dashboard now has a separate bounded lane (one thread, one pending request, same budgets).
+- **Browsers become data, not a hard-coded `brave.exe`.** A `BrowserCatalog` maps executable names to a browser kind,
+  a support level and a token; `ProcessIdentity` never matches a window by title or by an unverified substring, it
+  queries the process image name exactly as before and now returns *which* supported browser the window belongs to.
+  A browser is offered to the user only at or above the support level its acceptance evidence justifies, and the × is
+  shown only for browsers the user enabled, so dev3 behaviour (Brave only) stays the default for an existing profile.
+- **The platform boundary is documented as blocked, not simulated.** No macOS or Linux host can be built, run or
+  verified with the tools available here (no runner has a GUI accessibility tree for a WinForms/Win32 host, and the
+  product's tab confirmation depends on per-OS accessibility implementations). dev4 therefore ships no macOS/Linux
+  code, adds a documentation entry with the exact blockers and the required work, and adds a static rule that fails if
+  the documentation starts claiming those platforms. `AGENTS.md` keeps its "do not claim" rule.
+- **Notifications stop being Shell balloons.** The notification surface becomes Xtension's own non-activating,
+  sound-free window (created once, shown with `SWP_NOACTIVATE`, never activated) so showing a notification can no
+  longer change the foreground window, play the system notification sound or create a Shell toast window. This is the
+  minimal change that removes the mechanisms a notification popup can use to disturb audio playback, and it does not
+  disable notifications.
+- **Profiles are a marker over authoritative values.** `performanceProfile` records which preset the user last chose;
+  the individual keys stay authoritative, so a user who edits a profile-controlled value keeps that value across a
+  restart and is shown as `custom` instead of being silently reset. No profile can change a safety value; the profiles
+  only select poll/scan cadences inside their existing documented ranges, and `balanced` equals the dev3 defaults, so
+  an existing installation behaves identically until the user opts in.
+- **Settings backup is the settings file, validated on the way in.** Import is parsed and bounded *before* anything is
+  written, unknown keys are preserved exactly as the normal load path preserves them, the previous file content is
+  restored if the write fails, and the result tells the user which values were applied, rejected or preserved.
+- **The icon is a real asset with multi-size frames**, embedded in the executable as its application icon and loaded
+  as the tray icon from the embedded resource with a painted fallback, so no image-processing dependency is added.
+
+**Acceptance criteria recorded before implementation** (the release gates for this candidate):
+
+1. Both Windows architectures build, static checks pass, the full core and Windows harness test sets pass on the exact
+   tagged commit.
+2. The real-browser acceptance proves *visible placement and an actual single-tab close* for every browser declared
+   supported, with the browser version and the refusal behaviour on ambiguous or unsupported states.
+3. A measured improvement of the event-to-visible path versus the published dev3 EXE, measured on one runner with the
+   same method, and no measured regression in idle CPU, working set or handles beyond noise.
+4. Every safety invariant is unchanged or stronger; a test demonstrates each fail-closed refusal still refuses.
+5. Version, changelog, README, audit document and both append-only logs agree with the published artifacts.
+6. The merge happens only after the required jobs are green, the tag is created on the merged commit, and the release
+   workflow publishes a prerelease whose assets and checksums verify.
+
+**Unresolved conflict recorded at this point:** the audio issue cannot be verified in this environment (no Windows,
+no audio device, no browser playback), so the notification change above is implemented as a *candidate* fix with an
+instrumented reproduction procedure and is explicitly reported as **not verified during real audio playback**.
+
+## Entry 017 — dev4 implementation record and the small decisions taken while writing it (2026-10-16)
+
+Appended after the implementation, before any CI run. Nothing here rewrites Entry 016; it records what was decided
+while the code was being written, so the reasoning is not lost.
+
+- **The event sources are advice, and the floor is measured in the code, not chosen for looks.** The selection-event
+  watcher and the foreground hook can only set a flag that makes the next tick scan immediately; the flag expires after
+  the staleness window, the worker still accepts one request at a time, and `EventWatchMinScanGapMs` (80 ms) is the
+  floor between two event-driven requests. A provider that denies, hangs or stops sending events therefore costs
+  responsiveness, never correctness, and a registration that hangs is abandoned after 1.5 s.
+- **`ScanLane` replaced the ad-hoc "kind" flag.** One enum with three values (`Overlay`, `Close`, `Dashboard`) is the
+  single description of why a scan exists; every counter, percentile and log field is per lane, so the dashboard's
+  background work can no longer be mistaken for the × path, in the code or in the numbers.
+- **The statistics line is bounded in both directions and never empty.** At most one line every 15 s or every 50
+  completed scans, no line while nothing has been scanned, and the line carries `samples=`. This is what makes a 20 s
+  measurement window (the CI resource job) contain real numbers, without letting a busy machine fill the log.
+- **The EXE gets the icon as well as the managed resource.** `/resource:` makes the ICO loadable by `AppIcon` for the
+  tray and the windows; `/win32icon:` (build scripts) and `<ApplicationIcon>` (csproj, for the MSBuild check) make
+  Explorer, the taskbar and the file properties show the same asset. Both gates now fail if either flag disappears, so
+  the icon cannot silently regress to the painted fallback.
+- **The recorded `fast` and `balanced` cadences come from the constants, not from a wish.** `balanced` is exactly the
+  dev3 defaults (500/250/100/2000 ms), `fast` uses the documented minima (300/100/50 ms, dashboard 1500 ms) and
+  `low-resource` slows everything down (1200/500/250 ms, dashboard 5000 ms). The README table is the source a user
+  reads, so it was corrected against `AppInfo` while writing it, and `custom` is documented as "your scan interval with
+  the balanced poll intervals", which is what `Profiles.CadenceFor` returns.
+- **Appearance is three bounded values, not a theme engine.** Colour is one of four named tokens, the border is a
+  switch, and opacity is uniform window alpha. Alpha cannot change the hit area, which is why it was chosen over
+  per-pixel blending, and 30% is the floor that still reads as a button.
+- **`tests/WindowsTests/BrowserBoundary.cs` was not written, deliberately.** The contract it was meant to cover is
+  already covered by `tests/UnitTests/BrowserCatalogTests.cs` (identity, contract gating, mask parsing, refusal
+  behaviour) and the icon part by the new harness tests, so a separate file would have duplicated coverage inside a
+  blind-written, unexecuted harness. Recorded here instead of adding an untested file to the release.
+- **The local gates were extended, not loosened, and they caught real mistakes while writing this candidate.** The
+  icon rule validates every ICO frame (count, sizes, bit depth, offsets inside the file); the platform rule fails any
+  document line that names macOS or Linux without stating that the platform is not supported; both gates require the
+  EXE-icon flags. `tools/api-check.py` was run after each edit and every complaint was fixed by renaming or registering
+  code — never by editing the check.
+- **`scripts/test.ps1` globs `tests\UnitTests\*.cs`**, so the four new dev4 suites (browser catalog, profiles, backup,
+  metrics) are picked up by the existing test step with no script change. `scripts/test-windows.ps1` and
+  `Xtension.csproj` keep explicit lists, and both were updated for every new file.
+- **Environment limit, restated because it decides what "done" means here: nothing was compiled or executed.** No C#
+  toolchain, no Windows desktop and no audio device exist in the authoring environment. `tools/verify-source.py`,
+  `tools/api-check.py` and a tree-sitter C# parse (no syntax errors) are the only evidence available locally; the
+  compile, the unit suites, the harness, the packaged binaries, the resource comparison and the real-Brave smoke are
+  evidence that only the GitHub runners can produce. This entry is therefore a record of work, not of verification.
+
+Verification order for this candidate, recorded before the fact: commit the work on the session branch, open the pull
+request, wait for the required jobs, merge only when they are green, verify the merged commit, then create and push the
+`v0.1.0-dev4` tag and confirm the release workflow published four assets plus `SHA256SUMS.txt` as a prerelease that is
+not marked latest. The run IDs belong in the pull request and in the release notes, and any further entry here is
+appended, never edited into this one.
+
+
+## Entry 018 - 2026-10-16 - the verification round: what running it changed
+
+The first CI runs compiled the candidate, ran the unit suites, ran the Windows harness, and then failed in ways that
+source inspection had not shown. Those failures are recorded as findings 22-25 in `docs/DEV4_AUDIT.md`; this entry
+records the decisions behind the fixes, because two of them are design decisions and not bug fixes.
+
+- **One container per logical radio group, and the row wraps.** Windows Forms radio buttons are mutually exclusive by
+  their parent container, so putting the visibility mode, the colour and the profile options in one group meant that
+  choosing a colour unchecked the mode - silently, in the window and in the applied settings. The fix that makes the
+  rule structural rather than remembered is one `FlowLayoutPanel` per logical group. The first attempt used
+  `WrapContents = false`, and the harness then measured an option 348 px wide inside a 323 px column at 150% text in the
+  smallest supported window: wrapping is what moves an option to a second line, and it is the reason the rows can
+  survive both the narrow window and the large font.
+- **Wrapping cannot fix a control that is wider than its column, so the labels themselves were shortened.** The mode
+  pair, the profile names and the browser support tags became short names, and what the parentheses explained moved
+  into the help paragraphs - which are `WrappingLabel`s that own their own height and already re-measure on a font or
+  width change. The choice belongs on the control; the explanation belongs in the text that can wrap. The same strings
+  are what the diagnostics panel prints for the active profile, so the two views now agree instead of the diagnostics
+  showing "Balanced (default, same as before)".
+- **The settings harness now checks the pairing that broke.** It selects the mode, then the colour, then requires the
+  mode to be unchanged in the window and in the settings handed to the host. A regression that reintroduces a shared
+  container fails on the spot instead of producing "the mode silently became always" months later.
+- **A notification window is not made topmost in its constructor.** `TopMost` is applied by the window manager when a
+  window is shown, and bringing a topmost window forward is exactly what a non-activating card must not do. Topmost
+  now comes from the same `SetWindowPos` with `SWP_NOACTIVATE | SWP_SHOWWINDOW` placement the overlay uses, and the
+  notice records a warning if it ever does end up holding the foreground rather than assuming it cannot.
+- **An assertion about a log line uses the product's own formatter.** The Brave acceptance run looked for
+  `browsers=brave` while the startup line writes `browsers brave`; the expected token now comes from
+  `BrowserCatalog.MaskTokenList`, so the assertion fails when the shipped default changes and cannot fail on wording.
+  A duplicated format string in a test is a defect waiting for its first execution.
+- **The harness reports where its time went instead of just being slow.** The UI Automation test failed its 15 s
+  deadline once on a loaded 32-bit runner and the message could say nothing about which step was slow. Each phase now
+  records its own duration and a timeout prints them, so the next occurrence says whether the product's scan or the
+  operating system's UI Automation plumbing underneath it was the slow part. The deadline itself is unchanged: nothing
+  was loosened to make a job green.
+- **Amended rule for any future gate work:** when a gate fails, read it as a statement about the repository first -
+  two of the three failures in this round were genuine pre-existing defects in the published dev3 window, and one was
+  a genuine defect in a test written for this candidate.
