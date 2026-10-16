@@ -16,6 +16,7 @@ $required = @(
     'Xtension.csproj', 'app.manifest.template', '.gitignore', '.gitattributes',
     'scripts\build.ps1', 'scripts\test.ps1', 'scripts\toolchain.ps1', 'scripts\update-version.ps1', 'scripts\verify-source.ps1',
     'scripts\package.ps1', 'scripts\measure-performance.ps1', 'docs\RELEASE_CAPABILITIES.md', 'docs\DEV3_AUDIT.md',
+    'docs\\DEV4_AUDIT.md', 'assets\\xtension.ico', 'assets\\xtension-256.png', 'tools\\generate-icon.py',
     'tests\UnitTests\TestFramework.cs', 'tests\UnitTests\Program.cs',
     '.github\workflows\ci.yml', '.github\workflows\release.yml'
 )
@@ -87,12 +88,79 @@ foreach ($entry in $sourceTexts.GetEnumerator()) {
 
 # csproj and build.ps1 must agree with the source tree.
 $projectPath = Join-Path $root 'Xtension.csproj'
-[xml]$project = Get-Content -LiteralPath $projectPath -Raw
+$projectText = Get-Content -LiteralPath $projectPath -Raw
+[xml]$project = $projectText
 $compileItems = @($project.SelectNodes("//*[local-name()='Compile']") | ForEach-Object { $_.GetAttribute('Include').Replace('/', '\') })
 $expected = @($sourceFiles | ForEach-Object { $_.FullName.Substring($root.Length + 1) })
 $expected += 'build\generated\VersionInfo.g.cs'
 foreach ($item in $expected) { if ($compileItems -notcontains $item) { Add-Failure "Xtension.csproj does not compile $item" } }
 foreach ($item in $compileItems) { if ($expected -notcontains $item) { Add-Failure "Xtension.csproj lists a missing or unexpected file: $item" } }
+# The application icon: one multi-size resource, embedded under the name the loader asks for and referenced
+# by both build scripts. A missing or renamed resource would silently fall back to the painted tray icon,
+# which is exactly the crisp-small-sizes requirement failing quietly.
+$iconPath = Join-Path $root "assets\xtension.ico"
+if (Test-Path -LiteralPath $iconPath) {
+    $iconBytes = [System.IO.File]::ReadAllBytes($iconPath)
+    $documentedSizes = @(16, 20, 24, 32, 40, 48, 64, 128, 256)
+    if ($iconBytes.Length -lt 22 -or $iconBytes[0] -ne 0 -or $iconBytes[1] -ne 0 -or $iconBytes[2] -ne 1 -or $iconBytes[3] -ne 0) {
+        Add-Failure "assets/xtension.ico is not a Windows icon file."
+    } else {
+        $frameCount = [System.BitConverter]::ToUInt16($iconBytes, 4)
+        $frameSizes = New-Object System.Collections.Generic.List[int]
+        for ($frame = 0; $frame -lt $frameCount; $frame++) {
+            $entry = 6 + 16 * $frame
+            if (($entry + 16) -gt $iconBytes.Length) { Add-Failure "assets/xtension.ico is truncated."; break }
+            $frameWidth = $iconBytes[$entry]
+            if ($frameWidth -eq 0) { $frameWidth = 256 }
+            $frameBits = [System.BitConverter]::ToUInt16($iconBytes, $entry + 6)
+            $frameLength = [System.BitConverter]::ToUInt32($iconBytes, $entry + 8)
+            $frameOffset = [System.BitConverter]::ToUInt32($iconBytes, $entry + 12)
+            $frameSizes.Add($frameWidth) | Out-Null
+            if ($frameBits -ne 32) { Add-Failure "assets/xtension.ico frame $frameWidth is not a 32-bit image." }
+            if (($frameOffset + $frameLength) -gt $iconBytes.Length) { Add-Failure "assets/xtension.ico frame $frameWidth runs past the end of the file." }
+        }
+        if ($frameCount -ne $documentedSizes.Count) { Add-Failure "assets/xtension.ico must contain the $($documentedSizes.Count) documented sizes (found $frameCount)." }
+        foreach ($documented in $documentedSizes) {
+            if ($frameSizes -notcontains $documented) { Add-Failure "assets/xtension.ico is missing the $documented pixel frame." }
+        }
+    }
+}
+$iconLoader = if ($sourceTexts.ContainsKey('src\UI\AppIcon.cs')) { $sourceTexts['src\UI\AppIcon.cs'] } else { '' }
+$resourceName = $null
+$resourceMatch = [regex]::Match($iconLoader, "ResourceName\s*=\s*""([^""]+)""")
+if ($resourceMatch.Success) { $resourceName = $resourceMatch.Groups[1].Value }
+if (-not $resourceName) {
+    Add-Failure "src/UI/AppIcon.cs must declare the resource name it loads."
+} elseif ($projectText -notmatch ("<LogicalName>" + [regex]::Escape($resourceName) + "</LogicalName>")) {
+    Add-Failure "Xtension.csproj must embed assets/xtension.ico as $resourceName."
+}
+if ($projectText -notmatch "assets\xtension\.ico") { Add-Failure "Xtension.csproj must reference assets/xtension.ico." }
+foreach ($buildName in @("build.ps1", "test-windows.ps1")) {
+    $buildText = Get-Content -LiteralPath (Join-Path $root ("scripts\\" + $buildName)) -Raw
+    if ($buildText -notmatch "/resource:" -or $buildText -notmatch "/win32icon:" -or $buildText -notmatch "assets\xtension\.ico") {
+        Add-Failure "scripts/$buildName must embed the application icon resource."
+    }
+}
+
+# Multi-platform claims: the product is Windows-only, and no document may advertise a platform that has no
+# implementation. Every line that names macOS or Linux has to carry one of the negative markers below, so an
+# optimistic sentence fails this check instead of shipping as an unverified claim.
+$negativeMarkers = @("not supported", "unsupported", "blocked", "not implemented", "not verified", "cannot", "no ",
+    "nothing", "would ", "plan", "limit", "deferred", "without")
+foreach ($documentName in @("README.md", "CHANGELOG.md", "docs\\RELEASE_CAPABILITIES.md", "docs\\DEV3_AUDIT.md", "docs\\DEV4_AUDIT.md")) {
+    $documentPath = Join-Path $root $documentName
+    if (-not (Test-Path -LiteralPath $documentPath)) { continue }
+    $documentLine = 0
+    foreach ($documentText in [System.IO.File]::ReadAllLines($documentPath)) {
+        $documentLine++
+        if ($documentText -notmatch "macOS" -and $documentText -notmatch "Linux") { continue }
+        $lowered = $documentText.ToLowerInvariant()
+        $stated = $false
+        foreach ($marker in $negativeMarkers) { if ($lowered.Contains($marker)) { $stated = $true; break } }
+        if (-not $stated) { Add-Failure "$documentName line $documentLine names a platform without stating that it is not supported." }
+    }
+}
+
 # Test file lists are explicit too. src globs the tree and scripts/test.ps1 globs tests\UnitTests, but the Windows
 # harness compiles a hand-written list, so a new test file there can be compiled by nothing at all and a renamed one
 # can be listed forever. Both directions are checked.

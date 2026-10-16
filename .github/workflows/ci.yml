@@ -118,7 +118,7 @@ jobs:
       - name: Download and checksum-verify the published baseline
         shell: powershell
         env:
-          BASELINE_TAG: v0.1.0-dev2
+          BASELINE_TAG: v0.1.0-dev3
         run: |
           $ErrorActionPreference = 'Stop'
           $tag = $env:BASELINE_TAG
@@ -136,7 +136,7 @@ jobs:
       - name: Measure both shipped EXEs on this runner
         shell: powershell
         env:
-          BASELINE_TAG: v0.1.0-dev2
+          BASELINE_TAG: v0.1.0-dev3
         run: |
           ./scripts/measure-performance.ps1 -Arch x64 -Seconds 20 `
             -Baseline ("dist/baseline/Xtension-" + $env:BASELINE_TAG + "-win-x64.exe") `

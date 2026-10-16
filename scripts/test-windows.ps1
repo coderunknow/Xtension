@@ -12,12 +12,16 @@ try {
     $directory = Join-Path $root 'dist\tests'
     New-Item -ItemType Directory -Force -Path $directory | Out-Null
     $output = Join-Path $directory "Xtension.WindowsTests-$Arch.exe"
+    $icon = Join-Path $root 'assets\xtension.ico'
+    if (-not (Test-Path -LiteralPath $icon)) { throw 'assets\xtension.ico is missing; run tools/generate-icon.py.' }
     $arguments = @(
         '/nologo', '/codepage:65001', '/target:exe', '/langversion:5', '/warn:4',
         '/main:Xtension.Tests.WindowsEntry', "/platform:$Arch", "/out:$output",
         '/r:System.dll', '/r:System.Core.dll', '/r:System.Drawing.dll', '/r:System.Windows.Forms.dll',
         "/r:$($uia[0])", "/r:$($uia[1])", "/r:$($uia[2])",
-        "/win32manifest:$(Join-Path $root 'build\generated\app.manifest')"
+        "/win32manifest:$(Join-Path $root 'build\generated\app.manifest')",
+        "/win32icon:$icon",
+        "/resource:$icon,Xtension.AppIcon.ico"
     ) + (Get-SourceFiles $root) + @(
         (Join-Path $root 'build\generated\VersionInfo.g.cs'),
         (Join-Path $root 'tests\UnitTests\TestFramework.cs'),
