@@ -37,6 +37,19 @@ namespace Xtension.Tests
                 throw new AssertionFailure(message + " (expected '" + expected + "', actual '" + actual + "')");
             }
         }
+
+        /// <summary>
+        /// Everything must still differ. Used where a duplicated identifier would be a silent aliasing bug: two
+        /// browsers sharing a mask bit, or two contracts reported under the same name, would each case a real
+        /// misidentification, and equality assertions alone cannot state that.
+        /// </summary>
+        public static void AreNotEqual<T>(T unexpected, T actual, string message)
+        {
+            if (EqualityComparer<T>.Default.Equals(unexpected, actual))
+            {
+                throw new AssertionFailure(message + " (both values were '" + actual + "')");
+            }
+        }
     }
 
     internal static class TestRunner

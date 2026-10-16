@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace Xtension.Tests
@@ -133,6 +134,10 @@ namespace Xtension.Tests
                     + " stateLines=" + stateLines
                     + " uiaScanMsP50=" + p50.ToString("F1", CultureInfo.InvariantCulture)
                     + " uiaScanMsP90=" + p90.ToString("F1", CultureInfo.InvariantCulture));
+                // The product's own counters and timings, taken from the lines this run appended to its log. Every
+                // field is a counter or a millisecond value; nothing private is involved. Missing values are reported
+                // as "n/a" rather than as zero, so an absent measurement can never look like a fast one.
+                Console.WriteLine(BuildLatencyLine(label, logPath, offset));
                 return 0;
             }
             catch (Exception ex)
@@ -147,6 +152,51 @@ namespace Xtension.Tests
                 Kill(browser);
                 Thread.Sleep(1000);
             }
+        }
+
+        /// <summary>
+        /// One machine-readable line with the application's own statistics, parsed from the last "Scan metrics" line
+        /// it wrote during this run. The format is the product's, so this reader fails to "n/a" instead of guessing.
+        /// </summary>
+        private static string BuildLatencyLine(string label, string logPath, long offset)
+        {
+            string text = ReadLog(logPath, offset, 262144);
+            string line = null;
+            if (text != null)
+            {
+                int index = 0;
+                while (true)
+                {
+                    int marker = text.IndexOf("Scan metrics:", index, StringComparison.Ordinal);
+                    if (marker < 0) break;
+                    int end = text.IndexOf('\n', marker);
+                    line = end < 0 ? text.Substring(marker) : text.Substring(marker, end - marker);
+                    index = marker + 1;
+                }
+            }
+            return "MEASURE-LATENCY label=" + label
+                + " requests=" + Statistic(line, @"requests=(\d+)")
+                + " refused=" + Statistic(line, @"refused=(\d+)")
+                + " completed=" + Statistic(line, @"completed=(\d+)")
+                + " stale=" + Statistic(line, @"stale=(\d+)")
+                + " discarded=" + Statistic(line, @"discarded=(\d+)")
+                + " errors=" + Statistic(line, @"errors=(\d+)")
+                + " stalls=" + Statistic(line, @"stalls=(\d+)")
+                + " scanMsP50=" + Statistic(line, @"scanMs p50=([0-9.]+)")
+                + " scanMsP95=" + Statistic(line, @"p95=([0-9.]+)")
+                + " scanMsMax=" + Statistic(line, @"max=(\d+)")
+                + " queueMsP95=" + Statistic(line, @"queueMs p95=([0-9.]+)")
+                + " events=" + Statistic(line, @"events=(\d+)")
+                + " samples=" + Statistic(line, @"samples=(\d+)")
+                + " eventToVisibleMsP95=" + Statistic(line, @"eventToVisibleMs p95=(\d+)")
+                + " lastEventToVisibleMs=" + Statistic(line, @"lastEventToVisibleMs=(\d+)");
+        }
+
+        private static string Statistic(string line, string pattern)
+        {
+            if (string.IsNullOrEmpty(line)) return "n/a";
+            Match match = Regex.Match(line, pattern);
+            return match.Success ? match.Groups[1].Value : "n/a";
         }
 
         /// <summary>Waits for the readiness line the application logs at the end of its own startup.</summary>

@@ -63,7 +63,7 @@ namespace Xtension.Tests
                     ShowWindow(brave, 3);
                     SetForegroundWindow(brave);
                     Wait(delegate { return NativeMethods.GetForegroundRootWindow() == brave; }, 5000, "runner could not foreground Brave");
-                    Assert.IsTrue(ProcessIdentity.IsBraveWindow(brave, true), "real Brave identity");
+                    Assert.IsTrue(ProcessIdentity.IsSupportedBrowser(brave, true), "real Brave identity");
                     ScanResult initial = null;
                     try
                     {
@@ -81,6 +81,14 @@ namespace Xtension.Tests
                     Wait(delegate { overlay = FindVisibleWindow(app.Id, true); return overlay != IntPtr.Zero; }, 10000, "candidate overlay did not appear");
                     Assert.AreEqual(TabGeometry.GetOverlayBounds(initial.SelectedHorizontalTab.Bounds, initial.Dpi, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical), NativeMethods.GetWindowBounds(overlay), "real overlay position");
                     Console.WriteLine("PASS shipped candidate EXE displays overlay without taking Brave foreground");
+                    // The icon evidence comes from the running shipped EXE, not from the sources: its startup line
+                    // states how many frames the embedded resource has and where the tray icon came from.
+                    string started = LastStartupLine();
+                    Assert.IsTrue(started != null, "the shipped EXE wrote its startup line");
+                    Assert.IsTrue(started.Contains("Icon: frames=9"), "the shipped EXE carries the nine-frame icon resource: " + started);
+                    Assert.IsTrue(started.Contains("tray source=embedded"), "the shipped EXE uses the embedded icon for the tray: " + started);
+                    Assert.IsTrue(started.Contains("browsers=brave"), "the shipped EXE starts with the verified browser enabled: " + started);
+                    Console.WriteLine("INFO shipped EXE icon and tray source: " + started);
 
                     for (int i = 0; i < 3; i++)
                     {
@@ -103,7 +111,7 @@ namespace Xtension.Tests
                     Wait(delegate
                     {
                         second = NativeMethods.GetForegroundRootWindow();
-                        return second != brave && ProcessIdentity.IsBraveWindow(second, true);
+                        return second != brave && ProcessIdentity.IsSupportedBrowser(second, true);
                     }, 7000, "second Brave window did not become foreground");
                     WaitForOverlay(app.Id, second, 7000);
                     SetForegroundWindow(brave);
@@ -331,11 +339,15 @@ namespace Xtension.Tests
                 IntPtr overlay = IntPtr.Zero;
                 try
                 {
+                    Stopwatch hoverShow = Stopwatch.StartNew();
                     Wait(delegate
                     {
                         overlay = FindVisibleWindow(app.Id, true);
                         return overlay != IntPtr.Zero && NativeMethods.GetWindowBounds(overlay) == configured;
                     }, 8000, "hover did not show the configured button");
+                    hoverShow.Stop();
+                    Console.WriteLine("INFO latency hover-first-show pointerOutsideToVisibleMs=" + hoverShow.ElapsedMilliseconds
+                        + " (includes the harness moving the pointer and the confirmation scan)");
                 }
                 catch (AssertionFailure)
                 {
@@ -352,6 +364,13 @@ namespace Xtension.Tests
                 Wait(delegate { return FindVisibleWindow(app.Id, true) == IntPtr.Zero; }, 5000,
                     "an inactive tab must not satisfy the hover rule");
                 Console.WriteLine("PASS an inactive tab and the title bar never satisfy the hover rule");
+
+                // Pointer-entry-to-visible, measured on the real browser: park the pointer outside the tab strip
+                // until the × is gone, then time how long the shipped EXE takes to show it again after the pointer
+                // enters the confirmed tab. This is the number the dev4 requirement asks for; it is reported whether
+                // it is good or bad, and a regression to "never appears again" still fails the run.
+                MeasurePointerEntryLatency(app.Id, page, scan.SelectedHorizontalTab.Bounds, "hover-reentry");
+                ReportScanLatency(brave, configuredSize, configuredInset, "real-browser-uia");
 
                 CursorTo(scan.SelectedHorizontalTab.Bounds);
                 Wait(delegate { overlay = FindVisibleWindow(app.Id, true); return overlay != IntPtr.Zero; }, 8000, "hover did not re-show the button");
@@ -430,6 +449,78 @@ namespace Xtension.Tests
             }
         }
 
+        /// <summary>
+        /// The most recent startup line of the real application, which states the version, the effective settings, the
+        /// icon frame count and the tray icon source. Counts and settings only; no title or URL is involved.
+        /// </summary>
+        private static string LastStartupLine()
+        {
+            try
+            {
+                if (!File.Exists(AppPaths.LogFile)) return null;
+                string[] lines = File.ReadAllLines(AppPaths.LogFile);
+                for (int index = lines.Length - 1; index >= 0; index--)
+                {
+                    if (lines[index].Contains(" started. Overlay ")) return lines[index];
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Measures pointer-entry-to-visible on a real browser: parks the pointer away until the × is gone, then times
+        /// how long the shipped EXE needs to show it again after the pointer enters the confirmed selected tab. The
+        /// number is printed as evidence; a ceiling assertion keeps a regression to "never appears" from passing.
+        /// </summary>
+        private static void MeasurePointerEntryLatency(int appId, Point away, Rectangle tab, string label)
+        {
+            SetCursorPos(away.X, away.Y);
+            try
+            {
+                Wait(delegate { return FindVisibleWindow(appId, true) == IntPtr.Zero; }, 5000,
+                    "the × did not hide after the pointer left the tab strip");
+            }
+            catch (AssertionFailure)
+            {
+                Console.WriteLine("INFO latency " + label + " skipped: the × stayed visible with the pointer away");
+                return;
+            }
+            Stopwatch watch = Stopwatch.StartNew();
+            SetCursorPos(tab.Left + tab.Width / 2, tab.Top + tab.Height / 2);
+            Wait(delegate { return FindVisibleWindow(appId, true) != IntPtr.Zero; }, 5000,
+                "the × did not appear after the pointer entered the confirmed tab strip");
+            watch.Stop();
+            long milliseconds = watch.ElapsedMilliseconds;
+            Console.WriteLine("INFO latency " + label + " pointerToVisibleMs=" + milliseconds);
+            Assert.IsTrue(milliseconds < 3000, "pointer entry to a visible × must stay under 3000 ms (measured "
+                + milliseconds + " ms)");
+        }
+
+        /// <summary>Ten harness-side UI Automation calls against the real browser, reported as p50/p95/max.</summary>
+        private static void ReportScanLatency(IntPtr brave, int size, int inset, string label)
+        {
+            List<long> samples = new List<long>();
+            for (int index = 0; index < 10; index++)
+            {
+                Stopwatch watch = Stopwatch.StartNew();
+                ScanResult result = UiaTabScanner.Scan(brave, size, inset);
+                watch.Stop();
+                if (result.Outcome != ScanOutcome.Ready) return;
+                samples.Add(watch.ElapsedMilliseconds);
+            }
+            samples.Sort();
+            long p50 = samples[samples.Count / 2];
+            long p95 = samples[(int)((samples.Count - 1) * 0.95)];
+            Console.WriteLine("INFO latency " + label + " samples=" + samples.Count + " p50Ms=" + p50
+                + " p95Ms=" + p95 + " maxMs=" + samples[samples.Count - 1] + " (harness-side scan of a real browser)");
+        }
+
         /// <summary>One line explaining what a scan produced, so a timed-out wait is diagnosable from the annotation.</summary>
         private static string DescribeScan(ScanResult scan)
         {
@@ -501,7 +592,7 @@ namespace Xtension.Tests
             return "primaryIconic=" + NativeMethods.IsIconic(primary) + "; secondaryIconic=" + NativeMethods.IsIconic(secondary)
                 + "; foreground=" + foreground.ToInt64() + "; foregroundIsPrimary=" + (foreground == primary)
                 + "; foregroundIsSecondary=" + (foreground == secondary) + "; foregroundIconic=" + NativeMethods.IsIconic(foreground)
-                + "; foregroundBrave=" + ProcessIdentity.IsBraveWindow(foreground, true)
+                + "; foregroundBrave=" + ProcessIdentity.IsSupportedBrowser(foreground, true)
                 + "; priorOverlay=" + priorOverlay.ToInt64() + "; priorOverlayVisible=" + NativeMethods.IsWindowVisible(priorOverlay)
                 + "; visibleSmallWindow=" + visible.ToInt64();
         }

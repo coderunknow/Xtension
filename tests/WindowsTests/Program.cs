@@ -13,6 +13,7 @@ namespace Xtension.Tests
     {
         [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
         [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int virtualKey);
+        [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hwnd, int index);
 
         [STAThread]
         private static int Main(string[] args)
@@ -115,7 +116,7 @@ namespace Xtension.Tests
                         foreach (Size size in new Size[] { new Size(640, 440), new Size(360, 280), new Size(1000, 650) })
                         {
                             form.Size = size;
-                            form.Render(new ActiveTabSnapshot { Enabled = true, BraveInForeground = true,
+                            form.Render(new ActiveTabSnapshot { Enabled = true, SupportedBrowserInForeground = true,
                                 HiddenReason = "Quét UI Automation thất bại. Đã ẩn nút ×. " + new string('x', 160),
                                 Scan = FailingScan() });
                             form.PerformLayout();
@@ -208,7 +209,7 @@ namespace Xtension.Tests
                 {
                     try
                     {
-                        ScanRequest first = new ScanRequest(1, ScanKind.Overlay, 0, new IntPtr(1), Point.Empty);
+                        ScanRequest first = new ScanRequest(1, ScanLane.Overlay, 0, new IntPtr(1), Point.Empty);
                         Assert.IsTrue(worker.TrySubmit(first), "first request accepted");
                         Assert.IsTrue(entered.WaitOne(5000), "worker started");
                         Assert.IsFalse(worker.TrySubmit(first), "busy lane refuses second request");
@@ -216,7 +217,7 @@ namespace Xtension.Tests
                         Assert.IsTrue(delivered.WaitOne(5000), "error delivered");
                         Assert.AreEqual(ScanOutcome.Error, last.Result.Outcome, "exception fails closed");
                         Assert.IsFalse(last.Result.Error.Contains("PRIVATE"), "provider message redacted");
-                        Assert.IsTrue(worker.TrySubmit(new ScanRequest(2, ScanKind.Overlay, 0, new IntPtr(1), Point.Empty)), "error does not wedge lane");
+                        Assert.IsTrue(worker.TrySubmit(new ScanRequest(2, ScanLane.Overlay, 0, new IntPtr(1), Point.Empty)), "error does not wedge lane");
                         Assert.IsTrue(delivered.WaitOne(5000), "recovery delivered");
                         Assert.AreEqual(ScanOutcome.NoTabs, last.Result.Outcome, "recovery outcome");
                         worker.Dispose();
@@ -239,7 +240,7 @@ namespace Xtension.Tests
                 {
                     System.Reflection.MethodInfo complete = typeof(ActiveTabController).GetMethod("OnScanCompleted",
                         System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    ScanRequest old = new ScanRequest(1, ScanKind.Dashboard, 0, new IntPtr(1), Point.Empty);
+                    ScanRequest old = new ScanRequest(1, ScanLane.Dashboard, 0, new IntPtr(1), Point.Empty);
                     ScanResult result = ScanResult.Idle(old.Window, ScanOutcome.Ready, ScanMessageKey.Ready);
                     complete.Invoke(controller, new object[] { new ScanCompletion(old, result) });
                     Assert.IsTrue(controller.GetSnapshot().Scan == result, "dashboard accepts diagnostics only");
@@ -520,6 +521,200 @@ namespace Xtension.Tests
             return null;
         }
 
+        /// <summary>
+        /// The shipped executable embeds one icon with a frame for every size Explorer, the notification area and the
+        /// file properties dialog ask for, and the tray really uses it. A build whose resource went missing must show
+        /// the painted fallback instead of a blank square, which is checked too.
+        /// </summary>
+        [Test]
+        public static void IconResourceCarriesEverySizeTheTrayAndExplorerAskFor()
+        {
+            Assert.AreEqual(9, AppIcon.FrameCount(), "the embedded icon is compiled in with its nine frames");
+            using (Icon small = AppIcon.Small())
+            using (Icon large = AppIcon.Large())
+            {
+                Assert.IsTrue(small != null, "the tray size is available from the embedded resource");
+                Assert.IsTrue(large != null, "the window size is available from the embedded resource");
+                Assert.IsTrue(small.Width >= 16 && small.Width <= 32, "the tray icon is a small frame: " + small.Width);
+                Assert.IsTrue(large.Width >= 16, "the window icon has a usable frame: " + large.Width);
+            }
+            Assert.IsTrue(TrayIcon.UsesEmbedded(), "the tray icon comes from the embedded resource, not the fallback");
+            using (Icon tray = TrayIcon.Create())
+            {
+                Assert.IsTrue(tray != null, "the tray icon is created");
+                Assert.IsTrue(tray.Width >= 16, "the tray icon has a real frame: " + tray.Width);
+            }
+            // The fallback must exist and work: an install whose resource is missing still shows something.
+            using (Icon painted = TrayIcon.CreatePainted(16))
+            {
+                Assert.IsTrue(painted != null, "the painted fallback icon is always available");
+                Assert.AreEqual(16, painted.Width, "the fallback honours the requested size");
+            }
+        }
+
+        /// <summary>
+        /// Notifications must never take the foreground. If showing one could activate a window, the × would have to
+        /// be recalculated for a different foreground window and a notification could interrupt what the user is
+        /// doing - which is also why the sound-free own window replaced the Shell balloon tip.
+        /// </summary>
+        [Test]
+        public static void NoticeWindowNeverActivatesOrTakesTheForeground()
+        {
+            const int WsExNoActivate = 0x08000000;
+            const int WsExToolWindow = 0x00000080;
+            const int GwlExStyle = -20;
+            using (Form fixture = new Form { Text = "Xtension notice foreground fixture", StartPosition = FormStartPosition.Manual, Location = new Point(40, 40), Size = new Size(420, 260) })
+            using (NoticeWindow notice = new NoticeWindow())
+            {
+                fixture.Show();
+                SetForegroundWindow(fixture.Handle);
+                Application.DoEvents();
+                IntPtr before = NativeMethods.GetForegroundRootWindow();
+
+                notice.Notify("Xtension", "Synthetic notification text for the non-activation check.");
+                Application.DoEvents();
+                Assert.IsTrue(notice.Visible, "the notice window is shown");
+                int style = GetWindowLong(notice.Handle, GwlExStyle);
+                Assert.IsTrue((style & WsExNoActivate) != 0, "the notice window must carry WS_EX_NOACTIVATE");
+                Assert.IsTrue((style & WsExToolWindow) != 0, "the notice window must be a tool window, never a taskbar window");
+                Assert.AreEqual(before, NativeMethods.GetForegroundRootWindow(),
+                    "showing a notification must not change the foreground window");
+
+                notice.Dismiss();
+                Application.DoEvents();
+                Assert.IsFalse(notice.Visible, "the notice window hides on dismiss");
+                Assert.AreEqual(before, NativeMethods.GetForegroundRootWindow(),
+                    "dismissing a notification must not change the foreground window either");
+            }
+        }
+
+        /// <summary>
+        /// The settings window's whole point is that a control change reaches the host immediately and that a value the
+        /// user edited is never silently replaced. This walks profile selection, a hand-edited interval, appearance and
+        /// the browser list through the real controls.
+        /// </summary>
+        [Test]
+        public static void SettingsWindowAppliesProfilesAppearanceAndBrowsers()
+        {
+            AppLanguage previous = Strings.Language;
+            try
+            {
+                Strings.Language = AppLanguage.English;
+                RecordingSettingsHost host = new RecordingSettingsHost();
+                using (SettingsForm form = new SettingsForm(host))
+                {
+                    form.PrepareForExit();
+                    form.Show();
+                    Application.DoEvents();
+                    List<Control> controls = AllControls(form);
+
+                    // Selecting a preset writes exactly the preset's interval.
+                    RadioButton fast = FindLocalized<RadioButton>(controls, StringId.ProfileFast);
+                    Assert.IsTrue(fast != null, "the fast preset radio exists");
+                    fast.Checked = true;
+                    Application.DoEvents();
+                    Assert.AreEqual(Profiles.CadenceFor(PerformanceProfile.Fast).ScanIntervalMs, host.Settings.ScanIntervalMs,
+                        "choosing a preset applies its documented interval");
+                    Assert.AreEqual(PerformanceProfile.Fast, host.Settings.Profile, "the chosen preset is the stored marker");
+
+                    // Editing the interval must turn the configuration into custom, and the window must say so
+                    // instead of continuing to claim the preset.
+                    NumericUpDown interval = FindNumeric(controls, Profiles.CadenceFor(PerformanceProfile.Fast).ScanIntervalMs);
+                    Assert.IsTrue(interval != null, "the scan interval control exists");
+                    interval.Value = 900;
+                    form.FlushPendingChanges();
+                    Application.DoEvents();
+                    Assert.AreEqual(900, host.Settings.ScanIntervalMs, "a debounced edit reaches the host");
+                    Assert.AreEqual(PerformanceProfile.Custom, host.Settings.Profile,
+                        "a profile-controlled value edited by the user is reported as custom, not as the old preset");
+                    RadioButton custom = FindLocalized<RadioButton>(controls, StringId.ProfileCustom);
+                    Assert.IsTrue(custom != null && custom.Checked, "the window shows the configuration as custom");
+
+                    // Appearance is applied without touching geometry or the hit area.
+                    int sizeBefore = host.Settings.ButtonSizeLogical;
+                    NumericUpDown opacity = FindNumeric(controls, AppInfo.DefaultButtonOpacityPercent);
+                    Assert.IsTrue(opacity != null, "the opacity control exists");
+                    opacity.Value = 50;
+                    form.FlushPendingChanges();
+                    Application.DoEvents();
+                    Assert.AreEqual(50, host.Settings.ButtonOpacityPercent, "opacity reaches the host");
+                    RadioButton red = FindLocalized<RadioButton>(controls, StringId.ColorRed);
+                    Assert.IsTrue(red != null, "the colour options exist");
+                    red.Checked = true;
+                    form.FlushPendingChanges();
+                    Application.DoEvents();
+                    Assert.AreEqual(OverlayColor.Red, host.Settings.ButtonColor, "the colour reaches the host");
+                    Assert.AreEqual(sizeBefore, host.Settings.ButtonSizeLogical, "appearance must not change the geometry");
+                    Assert.AreEqual("brave", BrowserCatalog.MaskTokenList(host.Settings.Browsers),
+                        "the browser list still contains only the verified browser");
+
+                    // Clearing the last browser must not leave the product with nothing to show.
+                    CheckBox browserBox = FindBrowserBox(controls);
+                    Assert.IsTrue(browserBox != null, "the browser list is offered in the window");
+                    browserBox.Checked = false;
+                    form.FlushPendingChanges();
+                    Application.DoEvents();
+                    Assert.AreEqual("brave", BrowserCatalog.MaskTokenList(host.Settings.Browsers),
+                        "the last browser cannot be cleared, so the × always has a browser it may appear in");
+
+                    // Export then import: the same validated path the window's file dialogs call.
+                    string directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "xtension-dev4-window-" + Guid.NewGuid().ToString("N"));
+                    System.IO.Directory.CreateDirectory(directory);
+                    try
+                    {
+                        string file = System.IO.Path.Combine(directory, "backup.ini");
+                        string exported = host.ExportSettings(file);
+                        Assert.IsTrue(exported == "exported", "the host reports a successful export: " + exported);
+                        Assert.IsTrue(System.IO.File.Exists(file), "the backup file exists");
+
+                        AppSettings other = AppSettings.Defaults();
+                        other.ScanIntervalMs = AppInfo.MinScanIntervalMs;
+                        host.Replace(other);
+                        form.LoadFromHost();
+                        string imported = host.ImportSettings(file);
+                        Assert.IsTrue(imported.StartsWith("imported", StringComparison.Ordinal), "the host reports a successful import: " + imported);
+                        Assert.AreEqual(900, host.Settings.ScanIntervalMs, "the imported configuration is the exported one");
+                        Assert.AreEqual(OverlayColor.Red, host.Settings.ButtonColor, "the imported appearance is the exported one");
+                    }
+                    finally
+                    {
+                        try { System.IO.Directory.Delete(directory, true); }
+                        catch (System.IO.IOException) { }
+                    }
+                    form.PrepareForExit();
+                }
+            }
+            finally
+            {
+                Strings.Language = previous;
+            }
+        }
+
+        /// <summary>
+        /// Finds the first numeric control showing a value. The settings window has no per-control names, so a value
+        /// that appears exactly once (each documented default is distinct) is the stable way to address one.
+        /// </summary>
+        private static NumericUpDown FindNumeric(List<Control> controls, int value)
+        {
+            foreach (Control control in controls)
+            {
+                NumericUpDown numeric = control as NumericUpDown;
+                if (numeric != null && numeric.Value == value) return numeric;
+            }
+            return null;
+        }
+
+        private static CheckBox FindBrowserBox(List<Control> controls)
+        {
+            foreach (Control control in controls)
+            {
+                CheckBox box = control as CheckBox;
+                if (box == null) continue;
+                if (box.Text != null && box.Text.Contains("Brave")) return box;
+            }
+            return null;
+        }
+
         private static int CountText(List<Control> controls, string text)
         {
             int count = 0;
@@ -535,6 +730,8 @@ namespace Xtension.Tests
         {
             private AppSettings _settings = AppSettings.Defaults();
             public bool RefuseDisable;
+            public string ExportPath;
+            public string ImportPath;
             public int ApplyCount;
             public int RequestCount;
             public int StartupChanges;
@@ -574,6 +771,35 @@ namespace Xtension.Tests
                 // The fixture never writes the registry: LaunchAtLogin stays false, which is the real state a
                 // settings window must keep showing after a click.
                 StartupChanges++;
+            }
+
+            /// <summary>
+            /// The fixture writes through the same validated path the product uses, into a temporary file, so the
+            /// settings window's export and import behaviour is exercised without touching the user's settings file.
+            /// </summary>
+            public string ExportSettings(string path)
+            {
+                ExportPath = path;
+                try
+                {
+                    string document = SettingsBackup.Export(_settings);
+                    System.IO.File.WriteAllText(path, document, new System.Text.UTF8Encoding(false));
+                    return "exported";
+                }
+                catch (Exception ex)
+                {
+                    return "export failed: " + ex.GetType().Name;
+                }
+            }
+
+            public string ImportSettings(string path)
+            {
+                ImportPath = path;
+                BackupImportResult outcome = SettingsBackup.Parse(System.IO.File.ReadAllText(path));
+                if (!outcome.Accepted) return "rejected";
+                _settings = outcome.Settings;
+                _settings.Normalize();
+                return "imported " + outcome.AppliedCount;
             }
 
             public void ShowDiagnostics()
