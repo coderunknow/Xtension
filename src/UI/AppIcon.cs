@@ -27,7 +27,7 @@ namespace Xtension
         {
             lock (Gate)
             {
-                if (_small == null && !_missing) _small = Load(SystemInformation.SmallIconSize);
+                if (_small == null && !_missing) _small = Load(System.Windows.Forms.SystemInformation.SmallIconSize);
                 return _small;
             }
         }
