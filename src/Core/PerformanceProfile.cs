@@ -85,6 +85,22 @@ namespace Xtension
             return Clone(Table[0]);
         }
 
+        /// <summary>
+        /// A copy of a table row. Callers get their own instance, so a caller cannot mutate the table and a later
+        /// request cannot see a value somebody else changed.
+        /// </summary>
+        private static ProfileCadence Clone(ProfileCadence source)
+        {
+            ProfileCadence copy = new ProfileCadence();
+            copy.Profile = source.Profile;
+            copy.ScanIntervalMs = source.ScanIntervalMs;
+            copy.ForegroundPollMs = source.ForegroundPollMs;
+            copy.HoverPollMs = source.HoverPollMs;
+            copy.DashboardScanIntervalMs = source.DashboardScanIntervalMs;
+            copy.EventDriven = source.EventDriven;
+            return copy;
+        }
+
         /// <summary>Stable token for the persisted marker.</summary>
         public static string Token(PerformanceProfile profile)
         {
