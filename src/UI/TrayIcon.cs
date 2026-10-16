@@ -4,26 +4,61 @@ using System.Drawing.Drawing2D;
 
 namespace Xtension
 {
-    /// <summary>Builds the notification-area icon at runtime, so no binary icon file is needed in the repository.</summary>
+    /// <summary>
+    /// Builds the notification-area icon. The shipped icon is the multi-size resource compiled into the executable
+    /// (<c>assets/xtension.ico</c>, produced by <c>tools/generate-icon.py</c>), requested at the size Windows uses for
+    /// the notification area so the small frames stay crisp. The painted fallback below exists only so a build whose
+    /// resources are missing still shows an icon instead of a blank square.
+    /// </summary>
     internal static class TrayIcon
     {
+        /// <summary>A caller-owned icon. The shared cached instance is cloned, so disposing this one is harmless.</summary>
         public static Icon Create()
         {
-            using (Bitmap bitmap = new Bitmap(32, 32))
+            try
+            {
+                Icon embedded = AppIcon.Small();
+                if (embedded != null) return (Icon)embedded.Clone();
+            }
+            catch (Exception ex)
+            {
+                AppLog.WarnThrottled("tray-icon", "The embedded icon could not be used: " + ex.GetType().Name);
+            }
+            return CreatePainted(32);
+        }
+
+        /// <summary>
+        /// True when the notification-area icon comes from the embedded multi-size resource. Logged at startup so a
+        /// build that lost its resource (or a fallback in use) is visible in the log and in the acceptance run.
+        /// </summary>
+        public static bool UsesEmbedded()
+        {
+            return AppIcon.Small() != null;
+        }
+
+        /// <summary>Fallback drawing, used only when no embedded icon is available.</summary>
+        public static Icon CreatePainted(int size)
+        {
+            if (size < 16) size = 16;
+            using (Bitmap bitmap = new Bitmap(size, size))
             using (Graphics graphics = Graphics.FromImage(bitmap))
             {
                 graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 graphics.Clear(Color.Transparent);
+                float scale = size / 32f;
                 using (SolidBrush background = new SolidBrush(Color.FromArgb(37, 99, 235)))
                 {
-                    FillRoundedRectangle(graphics, background, new Rectangle(1, 1, 30, 30), 7);
+                    FillRoundedRectangle(graphics, background,
+                        new Rectangle((int)Math.Round(1 * scale), (int)Math.Round(1 * scale),
+                            (int)Math.Round(30 * scale), (int)Math.Round(30 * scale)),
+                        Math.Max(1, (int)Math.Round(7 * scale)));
                 }
-                using (Pen pen = new Pen(Color.White, 3.0f))
+                using (Pen pen = new Pen(Color.White, Math.Max(1.4f, 3.0f * scale)))
                 {
                     pen.StartCap = LineCap.Round;
                     pen.EndCap = LineCap.Round;
-                    graphics.DrawLine(pen, 10, 10, 22, 22);
-                    graphics.DrawLine(pen, 22, 10, 10, 22);
+                    graphics.DrawLine(pen, 10 * scale, 10 * scale, 22 * scale, 22 * scale);
+                    graphics.DrawLine(pen, 22 * scale, 10 * scale, 10 * scale, 22 * scale);
                 }
 
                 IntPtr handle = bitmap.GetHicon();

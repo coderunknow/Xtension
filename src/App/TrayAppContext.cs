@@ -30,6 +30,7 @@ namespace Xtension
         private readonly ToolStripMenuItem _logItem;
         private readonly ToolStripMenuItem _exitItem;
         private readonly ShowDashboardListener _showListener;
+        private NoticeWindow _notice;
         private AppSettings _settings;
         private MainForm _mainForm;
         private DiagnosticsForm _diagnostics;
@@ -105,8 +106,11 @@ namespace Xtension
             AppLog.Info("Xtension " + AppInfo.DisplayVersion + " started. Overlay " + (_settings.OverlayEnabled ? "enabled" : "disabled")
                 + ", mode " + AppSettings.VisibilityToken(_settings.VisibilityMode)
                 + ", button " + _settings.ButtonSizeLogical + "/" + _settings.ButtonInsetLogical
-                + ", scan " + _settings.ScanIntervalMs + " ms."
-                + " Win32 INPUT size=" + KeyboardInjector.InputStructureSize + " bytes, pointer size=" + IntPtr.Size + ".");
+                + ", scan " + _settings.ScanIntervalMs + " ms"
+                + ", profile " + Profiles.Token(_settings.Profile)
+                + ", browsers " + BrowserCatalog.MaskTokenList(_settings.Browsers) + "."
+                + " Icon: frames=" + AppIcon.FrameCount() + ", tray source=" + (TrayIcon.UsesEmbedded() ? "embedded" : "painted")
+                + ". Win32 INPUT size=" + KeyboardInjector.InputStructureSize + " bytes, pointer size=" + IntPtr.Size + ".");
         }
 
         public ActiveTabSnapshot Snapshot
@@ -189,8 +193,9 @@ namespace Xtension
 
         private void UpdateTimerInterval()
         {
-            int interval = _settings.VisibilityMode == OverlayVisibilityMode.HoverOnSelectedTab
-                ? AppInfo.HoverPollMs : AppInfo.ForegroundPollMs;
+            // The controller owns the cadence because it depends on the performance profile, not only on the mode.
+            int interval = _controller.PollIntervalMs();
+            if (interval <= 0) interval = AppInfo.ForegroundPollMs;
             if (_timer.Interval != interval) _timer.Interval = interval;
         }
 
@@ -209,6 +214,8 @@ namespace Xtension
             if (_mainForm != null && !_mainForm.IsDisposed) _mainForm.ResetRenderCache();
             if (_diagnostics != null && !_diagnostics.IsDisposed) _diagnostics.ApplyLanguage();
             if (_settingsForm != null && !_settingsForm.IsDisposed) _settingsForm.ApplyLanguage();
+            if (_notice != null && !_notice.IsDisposed) _notice.ApplyLanguage();
+            if (_diagnostics != null && !_diagnostics.IsDisposed) _diagnostics.ApplyLanguage();
         }
 
         public void ShowDashboard()
@@ -314,19 +321,101 @@ namespace Xtension
             }
         }
 
+        /// <summary>
+        /// Shows a message in Xtension's own notification window. That window never activates, never takes the
+        /// foreground and plays no sound, so a notification cannot change which window is in front, cannot hide the
+        /// × through a foreground change and cannot play the Shell notification sound over other audio.
+        /// </summary>
         public void ShowTrayTip(string title, string message)
         {
             if (_exiting) return;
             try
             {
-                _tray.BalloonTipTitle = title;
-                _tray.BalloonTipText = message;
-                _tray.ShowBalloonTip(3000);
+                if (_notice == null || _notice.IsDisposed) _notice = new NoticeWindow();
+                _notice.Notify(title, message);
             }
             catch (Exception ex)
             {
-                AppLog.WarnThrottled("tray-tip", "Tray notification could not be shown: " + ex.GetType().Name);
+                AppLog.WarnThrottled("notice-window", "The notification could not be shown: " + ex.GetType().Name);
             }
+        }
+
+        /// <summary>Writes the current settings to a backup file and returns the sentence shown to the user.</summary>
+        public string ExportSettings(string path)
+        {
+            try
+            {
+                string document = SettingsBackup.Export(_settings);
+                File.WriteAllText(path, document, new UTF8Encoding(false));
+                AppLog.Info("Settings exported to a user-chosen file.");
+                return Strings.Get(StringId.BackupExportDone, path);
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("The settings could not be exported: " + ex.GetType().Name);
+                return Strings.Get(StringId.BackupExportFailed, ex.GetType().Name);
+            }
+        }
+
+        /// <summary>
+        /// Validates a backup file, writes it through the one settings path and applies it. Any failure leaves the
+        /// current configuration untouched, and the returned sentence says exactly what was applied, rejected,
+        /// clamped or preserved.
+        /// </summary>
+        public string ImportSettings(string path)
+        {
+            try
+            {
+                FileInfo info = new FileInfo(path);
+                if (!info.Exists) return Strings.Get(StringId.BackupImportFailed, "file not found");
+                // A backup is a settings file: the same size ceiling applies, checked before reading it.
+                if (info.Length > 4L * AppInfo.MaxSettingsBackupBytes) return Strings.Get(StringId.BackupImportTooLarge);
+
+                BackupImportResult outcome = SettingsBackup.Parse(File.ReadAllText(path));
+                if (!outcome.Accepted)
+                {
+                    AppLog.Warn("A settings import was rejected: " + outcome.Failure);
+                    return ImportFailureText(outcome);
+                }
+
+                string failure;
+                if (!SettingsBackup.ApplyToStore(_settingsStore, outcome, out failure))
+                {
+                    AppLog.Warn("A settings import could not be written: " + failure);
+                    return Strings.Get(StringId.BackupImportFailed, failure);
+                }
+                ApplySettings(outcome.Settings);
+                AppLog.Info("Settings imported: " + outcome.AppliedCount + " applied, " + outcome.RejectedKeys.Count
+                    + " rejected, " + outcome.ClampedKeys.Count + " clamped, " + outcome.PreservedKeys.Count + " preserved.");
+
+                StringBuilder text = new StringBuilder();
+                text.Append(Strings.Get(StringId.BackupImportDone, outcome.AppliedCount, outcome.RejectedKeys.Count,
+                    outcome.PreservedKeys.Count));
+                AppendKeyList(text, StringId.BackupImportRejectedKeys, outcome.RejectedKeys);
+                AppendKeyList(text, StringId.BackupImportClampedKeys, outcome.ClampedKeys);
+                AppendKeyList(text, StringId.BackupImportPreservedKeys, outcome.PreservedKeys);
+                return text.ToString();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn("A settings import failed: " + ex.GetType().Name);
+                return Strings.Get(StringId.BackupImportFailed, ex.GetType().Name);
+            }
+        }
+
+        private static void AppendKeyList(StringBuilder text, StringId id, System.Collections.Generic.List<string> keys)
+        {
+            if (keys == null || keys.Count == 0) return;
+            text.Append(Environment.NewLine);
+            text.Append(Strings.Get(id, string.Join(", ", keys.ToArray())));
+        }
+
+        private static string ImportFailureText(BackupImportResult outcome)
+        {
+            if (outcome.Message == StringId.BackupImportUnsupportedSchema)
+                return Strings.Get(StringId.BackupImportUnsupportedSchema, outcome.Schema, AppInfo.SettingsBackupSchema);
+            if (outcome.Message != StringId.None) return Strings.Get(outcome.Message);
+            return Strings.Get(StringId.BackupImportFailed, outcome.Failure);
         }
 
         private void UpdateStartupState()
@@ -370,6 +459,14 @@ namespace Xtension
             StopSafely(() => _controller.Dispose());
             StopSafely(() => _showListener.Dispose());
             StopSafely(() => { _overlay.Hide(); _overlay.Dispose(); });
+            StopSafely(() =>
+            {
+                if (_notice != null && !_notice.IsDisposed)
+                {
+                    _notice.Dismiss();
+                    _notice.Dispose();
+                }
+            });
             StopSafely(() => { if (_diagnostics != null && !_diagnostics.IsDisposed) _diagnostics.Close(); });
             StopSafely(() =>
             {
