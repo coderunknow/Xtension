@@ -231,9 +231,15 @@ namespace Xtension
             return kind == BrowserKind.None ? NoBrowsers : 1 << (int)kind;
         }
 
+        /// <summary>
+        /// True when the user's selection includes this browser. A browser whose tab-access contract this build does
+        /// not implement is never enabled, whatever the mask says, so a call site that forgets to check support
+        /// separately still cannot scan an unverified browser.
+        /// </summary>
         public static bool IsEnabled(int browserMask, BrowserKind kind)
         {
             if (kind == BrowserKind.None) return false;
+            if (!IsSupported(kind)) return false;
             return (browserMask & Mask(kind)) != NoBrowsers;
         }
 

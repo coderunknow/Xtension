@@ -149,8 +149,15 @@ namespace Xtension.Tests
             BackupImportResult imported = SettingsBackup.Parse(document);
             Assert.IsTrue(imported.Accepted, "one bad value does not discard the whole document: " + imported.Failure);
             Assert.AreEqual(2, imported.RejectedKeys.Count, "both unusable keys are reported: " + imported.RejectedKeys.Count);
-            Assert.AreEqual(AppSettings.ButtonSizeKey, imported.RejectedKeys[0], "the unusable size is reported by name");
-            Assert.AreEqual(AppSettings.BrowsersKey, imported.RejectedKeys[1], "the unusable browser list is reported by name");
+            Assert.IsTrue(imported.RejectedKeys.Contains(AppSettings.ButtonSizeKey), "the unusable size is reported by name");
+            Assert.IsTrue(imported.RejectedKeys.Contains(AppSettings.BrowsersKey), "the unusable browser list is reported by name");
+            // The report is ordered, so the same document always produces the same list for the user to read.
+            for (int index = 1; index < imported.RejectedKeys.Count; index++)
+            {
+                Assert.IsTrue(string.CompareOrdinal(imported.RejectedKeys[index - 1], imported.RejectedKeys[index]) < 0,
+                    "the rejected names are reported in a stable order: " + imported.RejectedKeys[index - 1]
+                    + " then " + imported.RejectedKeys[index]);
+            }
             // A rejected value falls back to the documented default, and the resulting browser list may only contain
             // browsers this build can confirm.
             Assert.AreEqual("brave", BrowserCatalog.MaskTokenList(imported.Settings.Browsers),

@@ -44,6 +44,7 @@ namespace Xtension.Tests
             for (int index = 1; index <= 20; index++)
             {
                 // 1..20 ms, all in the overlay lane, with queue wait equal to the second half of the sample.
+                metrics.CountRequest();
                 metrics.Record(ScanLane.Overlay, index, index, index * 2);
             }
             ScanMetricsSnapshot totals = metrics.Snapshot();
@@ -53,7 +54,8 @@ namespace Xtension.Tests
             Assert.IsTrue(totals.ScanP95Ms >= totals.ScanP50Ms, "p95 is never below p50");
             Assert.IsTrue(totals.ScanP95Ms <= totals.ScanMaxMs, "p95 is never above the maximum");
             Assert.IsTrue(totals.QueueP95Ms >= 1 && totals.QueueP95Ms <= 20, "queue p95 is inside its own sample range");
-            Assert.IsTrue(totals.Describe().Contains("requests=20"), "the summary reports the request count");
+            Assert.IsTrue(totals.Describe().Contains("requests=20"), "the summary reports the request count: " + totals.Describe());
+            Assert.IsTrue(totals.Describe().Contains("samples=20"), "the summary reports how many timings it kept: " + totals.Describe());
             Assert.IsTrue(totals.Describe().Contains("scanMs p50="), "the summary reports scan percentiles");
         }
 
