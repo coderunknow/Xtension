@@ -707,6 +707,18 @@ namespace Xtension.Tests
 
                     // Appearance is applied without touching geometry or the hit area.
                     int sizeBefore = host.Settings.ButtonSizeLogical;
+                    // Two unrelated radio groups used to share one container, and WinForms makes radio buttons
+                    // exclusive per container: choosing a colour then switched the visibility mode back to "always"
+                    // without a word. The mode is chosen first and checked again after the colour, so that pairing
+                    // cannot come back unnoticed.
+                    RadioButton hoverMode = FindLocalized<RadioButton>(controls, StringId.SettingsModeHover);
+                    Assert.IsTrue(hoverMode != null, "the visibility mode options exist");
+                    hoverMode.Checked = true;
+                    form.FlushPendingChanges();
+                    Application.DoEvents();
+                    Assert.AreEqual(OverlayVisibilityMode.HoverOnSelectedTab, host.Settings.VisibilityMode,
+                        "the visibility mode reaches the host");
+
                     NumericUpDown opacity = FindNumeric(controls, AppInfo.DefaultButtonOpacityPercent);
                     Assert.IsTrue(opacity != null, "the opacity control exists");
                     opacity.Value = 50;
@@ -719,6 +731,9 @@ namespace Xtension.Tests
                     form.FlushPendingChanges();
                     Application.DoEvents();
                     Assert.AreEqual(OverlayColor.Red, host.Settings.ButtonColor, "the colour reaches the host");
+                    Assert.IsTrue(hoverMode.Checked, "choosing a colour must not clear the visibility mode");
+                    Assert.AreEqual(OverlayVisibilityMode.HoverOnSelectedTab, host.Settings.VisibilityMode,
+                        "choosing a colour must not change the visibility mode");
                     Assert.AreEqual(sizeBefore, host.Settings.ButtonSizeLogical, "appearance must not change the geometry");
                     Assert.AreEqual("brave", BrowserCatalog.MaskTokenList(host.Settings.Browsers),
                         "the browser list still contains only the verified browser");

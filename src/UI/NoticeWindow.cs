@@ -40,7 +40,9 @@ namespace Xtension
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.Manual;
             AutoScaleMode = AutoScaleMode.None;
-            TopMost = true;
+            // Deliberately not TopMost in the constructor: a topmost window is brought forward when it is shown, and
+            // the card must never take the foreground. Topmost is applied with SetWindowPos and SWP_NOACTIVATE while
+            // showing instead, which is the same non-activating placement the overlay uses.
             BackColor = Color.FromArgb(24, 34, 51);
             KeyPreview = true;
             MinimumSize = new Size(120, 40);
@@ -120,9 +122,16 @@ namespace Xtension
                 _title.Text = title == null ? AppInfo.ProductName : title;
                 _message.Text = message == null ? string.Empty : message;
                 LayoutCard();
+                IntPtr foregroundBefore = NativeMethods.GetForegroundRootWindow();
                 if (!Visible) Show();
                 NativeMethods.SetWindowPos(Handle, NativeMethods.HwndTopmost, Left, Top, Width, Height,
                     NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
+                // The card is allowed to be visible and topmost, never to hold the foreground. If it ever did, that
+                // would be a defect worth knowing about, so it is recorded instead of being assumed away.
+                if (NativeMethods.GetForegroundRootWindow() == Handle && foregroundBefore != Handle)
+                {
+                    AppLog.WarnThrottled("notice-window", "The notification took the foreground window; it must not.");
+                }
                 _timer.Stop();
                 _timer.Interval = AppInfo.NoticeAutoCloseMs;
                 _timer.Start();

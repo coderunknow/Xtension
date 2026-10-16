@@ -102,6 +102,7 @@ namespace Xtension
                 BuildGeneralGroup(content);
                 BuildAppearanceGroup(content);
                 BuildPerformanceGroup(content);
+                BuildBrowsersGroup(content);
                 BuildAdvancedGroup(content);
 
                 UiLayout.Add(content, UiLayout.Localize(new WrappingLabel
@@ -177,8 +178,10 @@ namespace Xtension
             _languageEnglish = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.LanguageEnglish);
             _languageVietnamese.CheckedChanged += delegate { if (!_loading) LanguageChanged(); };
             _languageEnglish.CheckedChanged += delegate { if (!_loading) LanguageChanged(); };
-            UiLayout.Add(group, _languageVietnamese);
-            UiLayout.Add(group, _languageEnglish);
+            FlowLayoutPanel languageRow = RadioRow();
+            languageRow.Controls.Add(_languageVietnamese);
+            languageRow.Controls.Add(_languageEnglish);
+            UiLayout.Add(group, languageRow);
 
             _startupBox = UiLayout.Localize(new WrappingCheckBox { AutoSize = true, ForeColor = _text, Margin = new Padding(0, 6, 0, 0) }, StringId.SettingsStartWithWindows);
             _startupBox.CheckedChanged += delegate
@@ -229,8 +232,10 @@ namespace Xtension
             _modeHover = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.SettingsModeHover);
             _modeAlways.CheckedChanged += delegate { if (!_loading) ModeChanged(); };
             _modeHover.CheckedChanged += delegate { if (!_loading) ModeChanged(); };
-            UiLayout.Add(group, _modeAlways);
-            UiLayout.Add(group, _modeHover);
+            FlowLayoutPanel modeRow = RadioRow();
+            modeRow.Controls.Add(_modeAlways);
+            modeRow.Controls.Add(_modeHover);
+            UiLayout.Add(group, modeRow);
             UiLayout.Add(group, Help(StringId.SettingsModeHelp));
 
             UiLayout.Add(group, UiLayout.Localize(new WrappingLabel { Font = _groupFont, ForeColor = _muted, Padding = new Padding(0, 6, 0, 0) }, StringId.SettingsGroupSize));
@@ -268,11 +273,13 @@ namespace Xtension
             _colorRed = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.ColorRed);
             _colorBlue = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.ColorBlue);
             _colorGreen = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.ColorGreen);
+            FlowLayoutPanel colourRow = RadioRow();
             foreach (RadioButton button in new RadioButton[] { _colorDark, _colorRed, _colorBlue, _colorGreen })
             {
                 button.CheckedChanged += delegate { if (!_loading) ColorChanged(); };
-                UiLayout.Add(group, button);
+                colourRow.Controls.Add(button);
             }
+            UiLayout.Add(group, colourRow);
 
             _opacityValue = NumberRow(group, StringId.SettingsOpacityLabel, AppInfo.MinButtonOpacityPercent,
                 AppInfo.MaxButtonOpacityPercent, 5, delegate { if (!_loading) ScheduleApply(); });
@@ -295,11 +302,13 @@ namespace Xtension
             _profileFast = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.ProfileFast);
             _profileLow = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.ProfileLowResource);
             _profileCustom = UiLayout.Localize(new RadioButton { AutoSize = true, ForeColor = _text }, StringId.ProfileCustom);
+            FlowLayoutPanel profileRow = RadioRow();
             foreach (RadioButton button in new RadioButton[] { _profileBalanced, _profileFast, _profileLow, _profileCustom })
             {
                 button.CheckedChanged += delegate { if (!_loading) ProfileChanged(); };
-                UiLayout.Add(group, button);
+                profileRow.Controls.Add(button);
             }
+            UiLayout.Add(group, profileRow);
             _intervalValue = NumberRow(group, StringId.SettingsScanIntervalLabel, AppInfo.MinScanIntervalMs,
                 AppInfo.MaxScanIntervalMs, 50, delegate { if (!_loading) ScheduleApply(); });
             _profileSummary = new WrappingLabel { ForeColor = _muted, Padding = new Padding(0, 4, 0, 0) };
@@ -628,6 +637,24 @@ namespace Xtension
                 UiLayout.ApplyLocalizedText(_browserBoxes[index]);
             }
             RefreshStatus();
+        }
+
+        /// <summary>
+        /// One row that holds exactly one logical radio group. WinForms makes radio buttons mutually exclusive by
+        /// their parent container, so two unrelated groups that share a container uncheck each other: with the
+        /// visibility-mode radios and the colour radios in the same group, choosing a colour switched the mode back to
+        /// "always" without telling anybody. Each logical group therefore gets its own row.
+        /// </summary>
+        private static FlowLayoutPanel RadioRow()
+        {
+            return new FlowLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = false,
+                Margin = new Padding(0, 2, 0, 2),
+                Padding = new Padding(0)
+            };
         }
 
         private TableLayoutPanel Group(TableLayoutPanel parent, StringId titleId)
