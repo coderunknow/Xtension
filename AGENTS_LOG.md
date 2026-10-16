@@ -426,3 +426,44 @@ happened, because that is the part a reader cannot reconstruct from the final di
 
 Not claimed: at the time of writing, the CI jobs after these fixes have not finished, so this entry records what was
 found and what was changed - not that the candidate is green. The final report records the runs.
+
+
+## 2026-10-16 - dev4 verification round two: every job green, and what it took
+
+Run `38921338899` on commit `bc999a8` is the first run in which every job this repository defines is green: static
+checks and unit tests (`95 passed, 0 failed`), MSBuild project check, Build x64 and Build x86 (each running the 14-test
+Windows harness, `14 passed, 0 failed`), package provenance and checksums, the baseline-vs-candidate performance job,
+and the isolated real-Brave smoke on both architectures. What happened between the first run and that one, in the order
+the CI runs reported it (each run ID is the annotation source):
+
+1. `38918735937` - static and MSBuild green; the window harness failed three assertions. Two were genuine defects in
+   the published dev3 window, reproduced from `git show 50fbb2c:src/UI/SettingsForm.cs`: `BuildBrowsersGroup` was
+   defined and never called, so the settings window offered no browser list at all; and the visibility-mode, colour and
+   profile options shared one container, so Windows Forms' per-container radio exclusivity made a colour choice uncheck
+   the mode - which is why a hover configuration was shown and applied as `always`. The third (the notice window as
+   foreground) was traced to `TopMost` being set before the handle existed; the topmost placement now comes from the
+   explicit non-activating `SetWindowPos` and the notice records a warning if it ever holds the foreground.
+2. `38919532453` - the clicks exposed a layout consequence of the fix: the harness then measured a settings control
+   clipped at 100% and again at 150%. Wrapping row containers were not enough on their own, because a control that is
+   wider than its column is clipped wherever it is placed; the option labels were shortened and their explanations
+   moved into the help paragraphs that already wrap. This is recorded rather than quietly fixed: the first fix was
+   incomplete, and the harness is what said so.
+3. `38920031386` - the window harness went green on both architectures. The smoke job then failed its own first
+   assertion, and the failure was in the test: it expected `browsers=brave` while the product writes `browsers brave`.
+   The expected token now comes from `BrowserCatalog.MaskTokenList`, the formatter the product uses.
+4. `38920881496` - build, package, harness and both smoke jobs green; the UI Automation harness test failed its 15 s
+   deadline once on the loaded 32-bit runner with no information about which step was slow. Per-phase timing was added
+   to that test (thread start, cache activation, element resolution, refused scan, contract scan) so the next timeout
+   names the slow step. The deadline was not raised.
+5. `38921338899` - all of it green, with real-browser measurements on the shipped candidate EXE: Brave `155.1.97.56`,
+   Windows `10.0.26100.0`, DPI 96, 19 staged checks passing on both architectures, real-browser UIA scans at p50
+   `58`/`62` ms and p95 `70`/`77` ms (x64/x86), pointer-entry-to-visible `156`/`150` ms, first show from outside the
+   tab strip `150`/`157` ms, settings window built and shown in `933`/`1118` ms. The performance job measured the
+   candidate against the published dev3 binary in one job on one runner; the numbers are in `CHANGELOG.md` and in the
+   final report.
+
+One external condition, recorded exactly as observed: the third-party `Kilo Code Review` app reports
+`action_required` with `Review could not start because the account has insufficient credits`. It is not a job of
+this repository's workflow, no gate of ours failed, and `CodeRabbit` passed. No required check was weakened,
+skipped or bypassed to reach the green run - the only test-side change that could look like loosening (the moved
+deadline) was refused, and the deadline logic is untouched.

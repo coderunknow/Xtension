@@ -362,3 +362,43 @@ request, wait for the required jobs, merge only when they are green, verify the 
 `v0.1.0-dev4` tag and confirm the release workflow published four assets plus `SHA256SUMS.txt` as a prerelease that is
 not marked latest. The run IDs belong in the pull request and in the release notes, and any further entry here is
 appended, never edited into this one.
+
+
+## Entry 018 - 2026-10-16 - the verification round: what running it changed
+
+The first CI runs compiled the candidate, ran the unit suites, ran the Windows harness, and then failed in ways that
+source inspection had not shown. Those failures are recorded as findings 22-25 in `docs/DEV4_AUDIT.md`; this entry
+records the decisions behind the fixes, because two of them are design decisions and not bug fixes.
+
+- **One container per logical radio group, and the row wraps.** Windows Forms radio buttons are mutually exclusive by
+  their parent container, so putting the visibility mode, the colour and the profile options in one group meant that
+  choosing a colour unchecked the mode - silently, in the window and in the applied settings. The fix that makes the
+  rule structural rather than remembered is one `FlowLayoutPanel` per logical group. The first attempt used
+  `WrapContents = false`, and the harness then measured an option 348 px wide inside a 323 px column at 150% text in the
+  smallest supported window: wrapping is what moves an option to a second line, and it is the reason the rows can
+  survive both the narrow window and the large font.
+- **Wrapping cannot fix a control that is wider than its column, so the labels themselves were shortened.** The mode
+  pair, the profile names and the browser support tags became short names, and what the parentheses explained moved
+  into the help paragraphs - which are `WrappingLabel`s that own their own height and already re-measure on a font or
+  width change. The choice belongs on the control; the explanation belongs in the text that can wrap. The same strings
+  are what the diagnostics panel prints for the active profile, so the two views now agree instead of the diagnostics
+  showing "Balanced (default, same as before)".
+- **The settings harness now checks the pairing that broke.** It selects the mode, then the colour, then requires the
+  mode to be unchanged in the window and in the settings handed to the host. A regression that reintroduces a shared
+  container fails on the spot instead of producing "the mode silently became always" months later.
+- **A notification window is not made topmost in its constructor.** `TopMost` is applied by the window manager when a
+  window is shown, and bringing a topmost window forward is exactly what a non-activating card must not do. Topmost
+  now comes from the same `SetWindowPos` with `SWP_NOACTIVATE | SWP_SHOWWINDOW` placement the overlay uses, and the
+  notice records a warning if it ever does end up holding the foreground rather than assuming it cannot.
+- **An assertion about a log line uses the product's own formatter.** The Brave acceptance run looked for
+  `browsers=brave` while the startup line writes `browsers brave`; the expected token now comes from
+  `BrowserCatalog.MaskTokenList`, so the assertion fails when the shipped default changes and cannot fail on wording.
+  A duplicated format string in a test is a defect waiting for its first execution.
+- **The harness reports where its time went instead of just being slow.** The UI Automation test failed its 15 s
+  deadline once on a loaded 32-bit runner and the message could say nothing about which step was slow. Each phase now
+  records its own duration and a timeout prints them, so the next occurrence says whether the product's scan or the
+  operating system's UI Automation plumbing underneath it was the slow part. The deadline itself is unchanged: nothing
+  was loosened to make a job green.
+- **Amended rule for any future gate work:** when a gate fails, read it as a statement about the repository first -
+  two of the three failures in this round were genuine pre-existing defects in the published dev3 window, and one was
+  a genuine defect in a test written for this candidate.

@@ -77,6 +77,23 @@ was replaced.
   instead of an empty line.
 - The tray icon was painted at run time in a single size and the executable had no icon at all; both now come from the
   shipped multi-size asset.
+- **The settings window offered no browser list at all.** `BuildBrowsersGroup` was written and never called, so
+  General, Appearance, Performance and Advanced were built and the browsers group was not: the checkboxes existed
+  nowhere, the browser mask could not be changed from the window, and the help text describing them was shown next to
+  nothing. The group is now built with the others, which is what the harness assertion `the browser list is offered in
+  the window` checks. This defect is present in the published dev3 window as well.
+- **Two unrelated groups of radio buttons unchecked each other.** The visibility-mode options, the colour options and
+  the profile options all lived in one container, and Windows Forms makes radio buttons mutually exclusive by their
+  parent container. Loading a hover-mode configuration checked the mode and then the colour, which silently turned the
+  window - and the applied setting - back to `always`; a user who picked a colour lost the mode they had just chosen.
+  Each logical group now has its own row, the harness selects the mode, then the colour, and then requires the mode to
+  survive, so the pairing cannot return unnoticed. This defect is present in the published dev3 window as well.
+- **Option rows were clipped rather than wrapped.** At 150% text in the smallest supported window an option measuring
+  348 px sat inside a 323 px column and was cut off at the edge; the rows now wrap, and the longest option labels are
+  short names (`Balanced`, `Fast`, `Low resource`, `Custom`, `Always when safe`, `Hover over the tab`, `verified`,
+  `experimental`, `not supported`) with what the parentheses used to explain moved into the help text that already
+  wraps. The layout assertion now reports the clipped control's own text and parent, so the next report names the
+  option instead of printing coordinates.
 
 ### Performance
 
@@ -91,7 +108,16 @@ was replaced.
   in one job on one runner, so the comparison is not across machines.
 - No safety rule was traded for speed: the scan budget, node/depth/sibling limits, staleness window, stall threshold,
   close-validation deadline, cooldown, epoch rule and confirmation rules are unchanged.
-- Nothing is claimed about the size of the improvement before those numbers exist.
+- **The numbers now exist** (CI run `38921338899`, x64 job `117042083952`, published `v0.1.0-dev3` binary and this
+  candidate on the same runner, 20 s sample each, pointer not moved so `events=0` and event-to-visible is `n/a`):
+  candidate `startupToReadyMs=108 idleCpuPercent=1.30 workingSetMb=46.5 privateMb=33.8 handles=408
+  uiaScanMsP50=12.2 uiaScanMsP90=15.8`, and its own counters `requests=30 completed=30 refused=0 stale=0 errors=0
+  stalls=0 scanMsP50=12.0 scanMsP95=17.0 scanMsMax=54 queueMsP95=0.0 samples=30`; published dev3 in the same job
+  `startupToReadyMs=104 idleCpuPercent=2.02 workingSetMb=48.7 privateMb=35.3 handles=375 uiaScanMsP50=33.7
+  uiaScanMsP90=46.1` (it writes none of the counters, so its latency fields are `n/a`); idle with no browser
+  candidate `idleCpuPercent=0.00 workingSetMb=33.5 handles=325 stateLines=0` against dev3 `idleCpuPercent=0.08
+  workingSetMb=31.0 handles=313`. The scan cost and the counters are the product's own; the harness measures the same
+  scanner against the same fixture window, and the real-browser numbers below come from the acceptance runs.
 
 ### Safety and privacy
 
@@ -115,6 +141,23 @@ was replaced.
   was compiled or executed there.
 - Compilation, the unit suites, the Windows harness, packaging, the performance comparison and the real-Brave smoke
   are verified by the repository's CI jobs, whose run IDs are recorded in the pull request and in the release notes.
+- **CI run `38921338899` (commit `bc999a8`) passed every job**: static checks and unit tests (`95 passed, 0 failed`),
+  MSBuild project check, Build x64 and Build x86 (each running the 14-test Windows harness: `14 passed, 0 failed`),
+  package provenance and checksums, the baseline-vs-candidate performance job, and the isolated real-Brave smoke on
+  both architectures. `Kilo Code Review`, a third-party review app that is not part of the repository's workflow,
+  reported `action_required` with "Review could not start because the account has insufficient credits"; CodeRabbit
+  passed.
+- **Real-Brave acceptance on the shipped candidate EXE** (smoke jobs `117042084021` x64 / `117042084269` x86, Brave
+  `155.1.97.56`, Windows `10.0.26100.0`, DPI 96, disposable profile): selected horizontal tab confirmed from 64 UIA
+  nodes, overlay placed on the confirmed tab without taking Brave's foreground, three `Ctrl+Tab` switches followed by a
+  real overlay move, two Brave windows tracked separately, `Shift`/`Alt`/`Win` clicks leaving all three tabs intact,
+  exactly one tab closed by one real mouse click, minimize/restore recovery, move/resize/maximize geometry, a twelve-tab
+  strip, a long synthetic title, the hover rule (inactive tab and title bar never qualify), a hover click closing
+  exactly one tab, persistence across a restart, and a corrupted settings file falling back to documented defaults.
+  Measured there: real-browser UIA scan p50 `58`/`62` ms, p95 `70`/`77` ms, max `73`/`78` ms over ten samples
+  (x64/x86); pointer-entry-to-visible after re-entry `156`/`150` ms; first show from outside the tab strip
+  `150`/`157` ms, which includes the harness moving the pointer and the confirmation scan; settings window built and
+  shown in `933`/`1118` ms in those runs.
 - **Not verified:** the audio crackle itself (no audio device or Windows desktop was available, so the notice-window
   change is a candidate fix, not a proven one), the appearance of the icon in a scaled tray, physical multi-monitor and
   mixed-DPI behaviour, native 32-bit Windows, a genuinely hung UI Automation provider, and Chrome, Edge and Firefox,
