@@ -644,6 +644,10 @@ namespace Xtension
         /// their parent container, so two unrelated groups that share a container uncheck each other: with the
         /// visibility-mode radios and the colour radios in the same group, choosing a colour switched the mode back to
         /// "always" without telling anybody. Each logical group therefore gets its own row.
+        ///
+        /// The row wraps, because the options must survive a narrow window and a large font. Without wrapping the row
+        /// is exactly as wide as the column allows and any option past that width is silently clipped - which is what
+        /// the harness caught at 100% and what the smallest supported window at 200% would have made much worse.
         /// </summary>
         private static FlowLayoutPanel RadioRow()
         {
@@ -651,7 +655,7 @@ namespace Xtension
             {
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                WrapContents = false,
+                WrapContents = true,
                 Margin = new Padding(0, 2, 0, 2),
                 Padding = new Padding(0)
             };

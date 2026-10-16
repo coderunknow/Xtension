@@ -146,7 +146,10 @@ namespace Xtension.Tests
                                     Assert.IsTrue(label.Height >= needed, "wrapped label height at " + scale + ": " + label.Height + " < " + needed);
                                 }
                                 if (control is Button || control is CheckBox)
-                                    Assert.IsTrue(control.Parent.ClientRectangle.Contains(control.Bounds), "action not clipped by flow row at " + scale + ": " + control.GetType().Name + " " + control.Bounds + " in " + control.Parent.ClientRectangle);
+                                    Assert.IsTrue(control.Parent.ClientRectangle.Contains(control.Bounds),
+                                        "action not clipped by flow row at " + scale + ": " + control.GetType().Name
+                                        + " '" + control.Text + "' " + control.Bounds + " in " + control.Parent.GetType().Name
+                                        + " " + control.Parent.ClientRectangle);
                             }
                         }
                     }
