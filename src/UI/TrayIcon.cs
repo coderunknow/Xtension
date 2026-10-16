@@ -1,6 +1,8 @@
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.IO;
 
 namespace Xtension
 {
@@ -12,13 +14,16 @@ namespace Xtension
     /// </summary>
     internal static class TrayIcon
     {
-        /// <summary>A caller-owned icon. The shared cached instance is cloned, so disposing this one is harmless.</summary>
+        /// <summary>
+        /// A new icon the caller owns. <see cref="AppIcon.Small"/> decodes its own instance on every call, so this
+        /// icon shares nothing with the tray, with a window or with any other caller.
+        /// </summary>
         public static Icon Create()
         {
             try
             {
                 Icon embedded = AppIcon.Small();
-                if (embedded != null) return (Icon)embedded.Clone();
+                if (embedded != null) return embedded;
             }
             catch (Exception ex)
             {
@@ -33,14 +38,20 @@ namespace Xtension
         /// </summary>
         public static bool UsesEmbedded()
         {
-            return AppIcon.Small() != null;
+            // Availability is a property of the resource, so this must not build an icon handle just to answer it.
+            return AppIcon.IsAvailable();
         }
 
-        /// <summary>Fallback drawing, used only when no embedded icon is available.</summary>
+        /// <summary>
+        /// Fallback drawing, used only when no embedded icon is available. The bitmap is encoded as a small 32-bit
+        /// ICO in memory and decoded into an icon the caller owns: a handle taken from a bitmap with
+        /// <c>Bitmap.GetHicon</c> belongs to nobody, so an icon built from one could neither outlive its creator nor
+        /// be disposed safely by the code that receives it.
+        /// </summary>
         public static Icon CreatePainted(int size)
         {
             if (size < 16) size = 16;
-            using (Bitmap bitmap = new Bitmap(size, size))
+            using (Bitmap bitmap = new Bitmap(size, size, PixelFormat.Format32bppArgb))
             using (Graphics graphics = Graphics.FromImage(bitmap))
             {
                 graphics.SmoothingMode = SmoothingMode.AntiAlias;
@@ -61,20 +72,75 @@ namespace Xtension
                     graphics.DrawLine(pen, 22 * scale, 10 * scale, 10 * scale, 22 * scale);
                 }
 
-                IntPtr handle = bitmap.GetHicon();
-                try
+                return IconFromBitmap(bitmap);
+            }
+        }
+
+        /// <summary>Decodes a bitmap into a caller-owned icon through an in-memory single-frame ICO.</summary>
+        internal static Icon IconFromBitmap(Bitmap bitmap)
+        {
+            byte[] bytes = EncodeIcon(bitmap);
+            using (MemoryStream stream = new MemoryStream(bytes, false))
+            {
+                return new Icon(stream);
+            }
+        }
+
+        /// <summary>
+        /// A 32-bit single-frame ICO: the format Windows and System.Drawing.Icon both read, and the same layout the
+        /// shipped asset uses (BITMAPINFOHEADER with the height doubled, bottom-up BGRA rows, zeroed AND mask, which
+        /// is what makes the alpha channel the only transparency source).
+        /// </summary>
+        internal static byte[] EncodeIcon(Bitmap bitmap)
+        {
+            int width = bitmap.Width;
+            int height = bitmap.Height;
+            int maskStride = ((width + 31) / 32) * 4;
+            int imageBytes = 40 + width * height * 4 + maskStride * height;
+            byte[] bytes = new byte[22 + imageBytes];
+            using (MemoryStream stream = new MemoryStream(bytes, true))
+            using (BinaryWriter writer = new BinaryWriter(stream))
+            {
+                writer.Write((ushort)0);
+                writer.Write((ushort)1);
+                writer.Write((ushort)1);
+                writer.Write((byte)(width >= 256 ? 0 : width));
+                writer.Write((byte)(height >= 256 ? 0 : height));
+                writer.Write((byte)0);
+                writer.Write((byte)0);
+                writer.Write((ushort)1);
+                writer.Write((ushort)32);
+                writer.Write((uint)imageBytes);
+                writer.Write((uint)22);
+
+                writer.Write((uint)40);
+                writer.Write(width);
+                writer.Write(height * 2);
+                writer.Write((ushort)1);
+                writer.Write((ushort)32);
+                writer.Write((uint)0);
+                writer.Write((uint)0);
+                writer.Write(0);
+                writer.Write(0);
+                writer.Write((uint)0);
+                writer.Write((uint)0);
+
+                // Bottom-up rows of straight (non-premultiplied) BGRA, which is the order the format stores them in.
+                for (int y = height - 1; y >= 0; y--)
                 {
-                    // Clone so the returned Icon owns its handle; the native handle is destroyed in finally.
-                    using (Icon temporary = Icon.FromHandle(handle))
+                    for (int x = 0; x < width; x++)
                     {
-                        return (Icon)temporary.Clone();
+                        Color pixel = bitmap.GetPixel(x, y);
+                        writer.Write(pixel.B);
+                        writer.Write(pixel.G);
+                        writer.Write(pixel.R);
+                        writer.Write(pixel.A);
                     }
                 }
-                finally
-                {
-                    NativeMethods.DestroyIcon(handle);
-                }
+                // The AND mask stays zero: with a 32-bit frame the alpha channel decides transparency.
+                for (int index = 0; index < maskStride * height; index++) writer.Write((byte)0);
             }
+            return bytes;
         }
 
         private static void FillRoundedRectangle(Graphics graphics, Brush brush, Rectangle bounds, int radius)

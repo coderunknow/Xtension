@@ -78,7 +78,23 @@ namespace Xtension.Tests
                                 AutomationElement cached = TreeWalker.ControlViewWalker.GetFirstChild(root, cache);
                                 Assert.IsTrue(cached.Cached.ControlType != null, "explicit cache overload works");
                             }
-                            ScanResult scan = UiaTabScanner.Scan(hwnd, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
+                            // The fixture is a synthetic window, not a browser: the identity gate must refuse it.
+                            // That refusal is asserted first, because it is what keeps a window that merely looks
+                            // like a browser from being scanned with Brave's assumptions.
+                            ScanResult refused = UiaTabScanner.Scan(hwnd, AppInfo.DefaultButtonSizeLogical,
+                                AppInfo.DefaultButtonInsetLogical);
+                            Assert.AreEqual(ScanOutcome.ContractUnimplemented, refused.Outcome,
+                                "a window that is not an enabled browser is refused: " + refused.Outcome);
+                            Assert.AreEqual(0, refused.Tabs.Count, "a refused scan exposes no tabs");
+                            Assert.IsTrue(refused.SelectedHorizontalTab == null, "a refused scan exposes no selected tab");
+
+                            // The bounded walk itself is exercised through the contract overload with the one
+                            // contract this build implements, which is what a real Brave window resolves to. This
+                            // window is still synthetic: passing here is not evidence that a real browser works,
+                            // which is what the isolated Brave run is for.
+                            BrowserDescriptor brave;
+                            Assert.IsTrue(BrowserCatalog.TryGet(BrowserKind.Brave, out brave), "the catalog has the verified browser");
+                            ScanResult scan = UiaTabScanner.Scan(hwnd, brave, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
                             Assert.AreEqual(ScanOutcome.Ready, scan.Outcome, "scanner on synthetic horizontal tabs: " + scan.Error + " " + scan.Message);
                             Assert.AreEqual(2, scan.Tabs.Count, "both siblings enumerated with cache");
                             Assert.IsTrue(scan.Tabs[1].Selected && !scan.Tabs[0].Selected, "cached selection pattern");
@@ -538,18 +554,64 @@ namespace Xtension.Tests
                 Assert.IsTrue(small.Width >= 16 && small.Width <= 32, "the tray icon is a small frame: " + small.Width);
                 Assert.IsTrue(large.Width >= 16, "the window icon has a usable frame: " + large.Width);
             }
+
+            // Disposing what the icon class hands out must never affect anybody else. The first version of this class
+            // returned one cached instance to every caller, so a single owner that disposed it destroyed the handle
+            // that every window and the tray were still using, and the next window to be painted threw
+            // ObjectDisposedException. This is the regression guard for that defect.
+            Icon disposable = AppIcon.Small();
+            Assert.IsTrue(disposable != null, "an icon is handed out");
+            disposable.Dispose();
+            using (Icon again = AppIcon.Small())
+            {
+                Assert.IsTrue(again != null, "an icon is still available after another one was disposed");
+                Assert.IsTrue(again.Width >= 16, "the second icon is a real frame: " + again.Width);
+                Assert.IsTrue(HasVisiblePixel(again), "the second icon can still be drawn");
+            }
+            using (Form window = new Form { Text = "Xtension icon fixture" })
+            {
+                AppIcon.Attach(window);
+                Assert.IsTrue(window.Icon != null, "a window gets its own icon");
+                Assert.IsTrue(HasVisiblePixel(window.Icon), "the window icon can still be drawn after the earlier disposal");
+            }
+
             Assert.IsTrue(TrayIcon.UsesEmbedded(), "the tray icon comes from the embedded resource, not the fallback");
             using (Icon tray = TrayIcon.Create())
             {
                 Assert.IsTrue(tray != null, "the tray icon is created");
                 Assert.IsTrue(tray.Width >= 16, "the tray icon has a real frame: " + tray.Width);
+                Assert.IsTrue(HasVisiblePixel(tray), "the tray icon can be drawn");
             }
-            // The fallback must exist and work: an install whose resource is missing still shows something.
+            // The fallback must exist and be usable: an install whose resource is missing still shows something, and
+            // an icon whose handle was already destroyed would fail here instead of looking fine.
             using (Icon painted = TrayIcon.CreatePainted(16))
             {
                 Assert.IsTrue(painted != null, "the painted fallback icon is always available");
                 Assert.AreEqual(16, painted.Width, "the fallback honours the requested size");
+                Assert.IsTrue(HasVisiblePixel(painted), "the painted fallback can actually be drawn");
             }
+            using (Icon painted = TrayIcon.CreatePainted(32))
+            using (Bitmap decoded = painted.ToBitmap())
+            {
+                Assert.AreEqual(32, decoded.Width, "the fallback is decoded back at its own size");
+            }
+        }
+
+        /// <summary>True when an icon can be converted to a bitmap and contains at least one visible pixel.</summary>
+        private static bool HasVisiblePixel(Icon icon)
+        {
+            if (icon == null || icon.Width <= 0) return false;
+            using (Bitmap bitmap = icon.ToBitmap())
+            {
+                for (int y = 0; y < bitmap.Height; y++)
+                {
+                    for (int x = 0; x < bitmap.Width; x++)
+                    {
+                        if (bitmap.GetPixel(x, y).A > 0) return true;
+                    }
+                }
+            }
+            return false;
         }
 
         /// <summary>
@@ -567,9 +629,19 @@ namespace Xtension.Tests
             using (NoticeWindow notice = new NoticeWindow())
             {
                 fixture.Show();
-                SetForegroundWindow(fixture.Handle);
-                Application.DoEvents();
-                IntPtr before = NativeMethods.GetForegroundRootWindow();
+                // Bringing a window to the front can be refused once, so this retries with message pumping instead of
+                // asserting on a single attempt: the contract below is "the notice never changes the foreground
+                // window", which cannot be measured at all unless the fixture really holds it first.
+                IntPtr before = IntPtr.Zero;
+                for (int attempt = 0; attempt < 40 && before != fixture.Handle; attempt++)
+                {
+                    SetForegroundWindow(fixture.Handle);
+                    Application.DoEvents();
+                    Thread.Sleep(50);
+                    before = NativeMethods.GetForegroundRootWindow();
+                }
+                Assert.AreEqual(fixture.Handle, before,
+                    "the runner could not bring the fixture to the foreground, so the non-activation contract cannot be measured");
 
                 notice.Notify("Xtension", "Synthetic notification text for the non-activation check.");
                 Application.DoEvents();
@@ -577,8 +649,11 @@ namespace Xtension.Tests
                 int style = GetWindowLong(notice.Handle, GwlExStyle);
                 Assert.IsTrue((style & WsExNoActivate) != 0, "the notice window must carry WS_EX_NOACTIVATE");
                 Assert.IsTrue((style & WsExToolWindow) != 0, "the notice window must be a tool window, never a taskbar window");
-                Assert.AreEqual(before, NativeMethods.GetForegroundRootWindow(),
-                    "showing a notification must not change the foreground window");
+                // Two separate claims: the notice never grabs the foreground itself, and it never takes it away from
+                // the window that had it.
+                IntPtr duringNotice = NativeMethods.GetForegroundRootWindow();
+                Assert.IsTrue(duringNotice != notice.Handle, "the notice window must never become the foreground window");
+                Assert.AreEqual(before, duringNotice, "showing a notification must not change the foreground window");
 
                 notice.Dismiss();
                 Application.DoEvents();
