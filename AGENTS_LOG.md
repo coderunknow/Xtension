@@ -467,3 +467,36 @@ One external condition, recorded exactly as observed: the third-party `Kilo Code
 this repository's workflow, no gate of ours failed, and `CodeRabbit` passed. No required check was weakened,
 skipped or bypassed to reach the green run - the only test-side change that could look like loosening (the moved
 deadline) was refused, and the deadline logic is untouched.
+
+
+## 2026-10-16 - dev4 published: merge, tag and asset verification
+
+- **Pull request #4** (`main` <- `arena/9ec9bbb9-xtension`, 17 commits over `50fbb2c`) was merged with a merge commit
+  after every job this repository defines was green on its head commit `0c59492` (run `38922227024`: static checks and
+  unit tests `95 passed, 0 failed`, MSBuild project check, Build x64 and x86 with the 14-test Windows harness each,
+  package provenance and checksums, the baseline-vs-candidate performance job, and the isolated real-Brave smoke on
+  both architectures). The only non-green entry was the third-party `Kilo Code Review` app reporting
+  `action_required` - "Review could not start because the account has insufficient credits" - which is an account
+  condition of an app that is not part of this workflow. Nothing was auto-merged and no check was weakened.
+- **Merge commit** `15900f524951b14ec7658e2ddadf07166f10ed3a` on `main`; the merged tree was re-read from the remote
+  before tagging: `VERSION` is `0.1.0-dev4`, the settings window calls `BuildBrowsersGroup`, and the radio rows carry
+  `WrapContents = true`.
+- **Tag** `v0.1.0-dev4` was confirmed absent (`git ls-remote --tags` showed only dev1, dev2 and dev3) and then created as
+  an annotated tag on the merge commit (`d18fb8a1fe8d1011d058f4a92c0b0a590f6412a9`, tagger 15:17:51Z, target commit
+  `15900f5`). No existing tag was moved and no published release was touched.
+- **Release workflow** `38922772057` (tag push) passed all four jobs: tag-versus-VERSION verification, Build x64,
+  Build x86, and Publish prerelease. Published: name `Xtension v0.1.0-dev4`, `isPrerelease: true`, `isDraft: false`,
+  four assets - `SHA256SUMS.txt` (296 bytes), `Xtension-v0.1.0-dev4-source.zip` (330692 bytes),
+  `Xtension-v0.1.0-dev4-win-x64.exe` (951808 bytes), `Xtension-v0.1.0-dev4-win-x86.exe` (952320 bytes). The publish job's
+  own final step re-downloaded all four assets, compared the published manifest with the packaged one and re-hashed
+  every asset against it; it passed, which is why the job is green. The three printed hashes: source.zip
+  `14643bf36e16806e8d06305e51916306bfc445d5f6f20d0b38e8217da6fb2f1b`, x64
+  `35b5a67b2c416666b61d43dc1451e8e17c49c081c65226ec5e8cea407c6cce82`, x86
+  `94167ee99c62fef08728a44be36165cdc03d6d05f917c2e4da89b994b13400e9`. `releases/latest` returns 404 because every
+  release in this repository is a prerelease, so nothing was marked latest.
+- **Blocked step, exactly as observed:** this authoring environment cannot re-download the published assets itself. The
+  asset URL host (`release-assets.githubusercontent.com`) and the artifact host
+  (`productionresultssa8.blob.core.windows.net`) are outside the environment's allowed hosts, and both returned `EOF` on
+  connect (`gh release download v0.1.0-dev4` and `gh run download 38922772057 -n Xtension-win-x64`). The equivalent
+  verification therefore rests on the workflow's own step, which runs inside GitHub and succeeded; nothing was
+  substituted for it and no hash in this log was computed locally.
