@@ -3,30 +3,23 @@ using System.Threading;
 
 namespace Xtension
 {
-    internal enum ScanKind
-    {
-        /// <summary>Periodic scan that may show or hide the overlay.</summary>
-        Overlay,
-        /// <summary>Scan of a non-foreground Brave window for the dashboard only. Never affects the overlay.</summary>
-        Dashboard,
-        /// <summary>Fresh scan requested by a × click. Its result alone may authorise Ctrl+W.</summary>
-        Close
-    }
-
     internal sealed class ScanRequest
     {
         public readonly long Id;
+        /// <summary>Submission time. Every freshness rule is measured from here, so queue wait counts as age.</summary>
         public readonly long StartedMs = Clock.NowMs;
-        public readonly ScanKind Kind;
+        /// <summary>When the lane began the scan. Diagnostics only; never a freshness input on its own.</summary>
+        public long WorkerStartMs = Clock.Never;
+        public readonly ScanLane Lane;
         /// <summary>Controller state epoch at request time. Results from an older epoch are discarded.</summary>
         public readonly long Epoch;
         public readonly IntPtr Window;
         public readonly System.Drawing.Point ClickScreen;
 
-        public ScanRequest(long id, ScanKind kind, long epoch, IntPtr window, System.Drawing.Point clickScreen)
+        public ScanRequest(long id, ScanLane lane, long epoch, IntPtr window, System.Drawing.Point clickScreen)
         {
             Id = id;
-            Kind = kind;
+            Lane = lane;
             Epoch = epoch;
             Window = window;
             ClickScreen = clickScreen;
@@ -46,7 +39,7 @@ namespace Xtension
     }
 
     /// <summary>
-    /// Runs UI Automation scans on one dedicated multithreaded thread, so a slow or hung Brave cannot freeze the tray.
+    /// Runs UI Automation scans on one dedicated multithreaded thread, so a slow or hung browser cannot freeze the tray.
     /// Holds at most one pending request and one running scan. TrySubmit refuses work while busy, so scans never overlap.
     /// </summary>
     internal sealed class ScanWorker : IDisposable
@@ -136,8 +129,9 @@ namespace Xtension
                     request = _pending;
                     _pending = null;
                     if (request == null) continue;
+                    request.WorkerStartMs = Clock.NowMs;
                     _running = request;
-                    _runningSinceMs = Clock.NowMs;
+                    _runningSinceMs = request.WorkerStartMs;
                 }
 
                 ScanResult result;
