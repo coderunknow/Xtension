@@ -11,12 +11,23 @@ $failures = New-Object System.Collections.Generic.List[string]
 
 function Add-Failure([string]$Message) { $failures.Add($Message) | Out-Null }
 
+# A check that fails has to say why on the checks page, not only in a log nobody can open. A terminating error (for
+# example an invalid pattern) previously ended the script silently, so it is reported here with everything collected
+# up to that point.
+trap {
+    $message = $_ | Out-String
+    if ($failures.Count -gt 0) { $message = ($failures -join ' / ') + ' / ' + $message }
+    Write-Host ('::error title=source check::' + $message)
+    Write-Host "FAIL: $message" -ForegroundColor Red
+    exit 1
+}
+
 $required = @(
     'LICENSE', 'VERSION', 'README.md', 'CHANGELOG.md', 'DESIGN_LOG.md', 'AGENTS_LOG.md', 'AGENTS.md',
     'Xtension.csproj', 'app.manifest.template', '.gitignore', '.gitattributes',
     'scripts\build.ps1', 'scripts\test.ps1', 'scripts\toolchain.ps1', 'scripts\update-version.ps1', 'scripts\verify-source.ps1',
     'scripts\package.ps1', 'scripts\measure-performance.ps1', 'docs\RELEASE_CAPABILITIES.md', 'docs\DEV3_AUDIT.md',
-    'docs\\DEV4_AUDIT.md', 'assets\\xtension.ico', 'assets\\xtension-256.png', 'tools\\generate-icon.py',
+    'docs\DEV4_AUDIT.md', 'assets\xtension.ico', 'assets\xtension-256.png', 'tools\generate-icon.py',
     'tests\UnitTests\TestFramework.cs', 'tests\UnitTests\Program.cs',
     '.github\workflows\ci.yml', '.github\workflows\release.yml'
 )
@@ -98,7 +109,7 @@ foreach ($item in $compileItems) { if ($expected -notcontains $item) { Add-Failu
 # The application icon: one multi-size resource, embedded under the name the loader asks for and referenced
 # by both build scripts. A missing or renamed resource would silently fall back to the painted tray icon,
 # which is exactly the crisp-small-sizes requirement failing quietly.
-$iconPath = Join-Path $root "assets\xtension.ico"
+$iconPath = Join-Path $root 'assets\xtension.ico'
 if (Test-Path -LiteralPath $iconPath) {
     $iconBytes = [System.IO.File]::ReadAllBytes($iconPath)
     $documentedSizes = @(16, 20, 24, 32, 40, 48, 64, 128, 256)
@@ -131,14 +142,14 @@ $resourceMatch = [regex]::Match($iconLoader, "ResourceName\s*=\s*""([^""]+)""")
 if ($resourceMatch.Success) { $resourceName = $resourceMatch.Groups[1].Value }
 if (-not $resourceName) {
     Add-Failure "src/UI/AppIcon.cs must declare the resource name it loads."
-} elseif ($projectText -notmatch ("<LogicalName>" + [regex]::Escape($resourceName) + "</LogicalName>")) {
+} elseif (-not $projectText.Contains("<LogicalName>" + $resourceName + "</LogicalName>")) {
     Add-Failure "Xtension.csproj must embed assets/xtension.ico as $resourceName."
 }
-if ($projectText -notmatch "assets\xtension\.ico") { Add-Failure "Xtension.csproj must reference assets/xtension.ico." }
+if (-not $projectText.Contains('assets\xtension.ico')) { Add-Failure 'Xtension.csproj must reference assets/xtension.ico.' }
 foreach ($buildName in @("build.ps1", "test-windows.ps1")) {
     $buildText = Get-Content -LiteralPath (Join-Path $root ("scripts\\" + $buildName)) -Raw
-    if ($buildText -notmatch "/resource:" -or $buildText -notmatch "/win32icon:" -or $buildText -notmatch "assets\xtension\.ico") {
-        Add-Failure "scripts/$buildName must embed the application icon resource."
+    if (-not $buildText.Contains('/resource:') -or -not $buildText.Contains('/win32icon:') -or -not $buildText.Contains('assets\xtension.ico')) {
+        Add-Failure ("scripts/" + $buildName + " must embed the application icon resource.")
     }
 }
 
@@ -147,7 +158,7 @@ foreach ($buildName in @("build.ps1", "test-windows.ps1")) {
 # optimistic sentence fails this check instead of shipping as an unverified claim.
 $negativeMarkers = @("not supported", "unsupported", "blocked", "not implemented", "not verified", "cannot", "no ",
     "nothing", "would ", "plan", "limit", "deferred", "without")
-foreach ($documentName in @("README.md", "CHANGELOG.md", "docs\\RELEASE_CAPABILITIES.md", "docs\\DEV3_AUDIT.md", "docs\\DEV4_AUDIT.md")) {
+foreach ($documentName in @('README.md', 'CHANGELOG.md', 'docs\RELEASE_CAPABILITIES.md', 'docs\DEV3_AUDIT.md', 'docs\DEV4_AUDIT.md')) {
     $documentPath = Join-Path $root $documentName
     if (-not (Test-Path -LiteralPath $documentPath)) { continue }
     $documentLine = 0
