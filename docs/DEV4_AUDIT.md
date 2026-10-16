@@ -60,6 +60,26 @@ Severity is about consequence, not about how hard the defect is to reach:
 The dev3 finding 8 (`CacheRequest` leak) is not revisited: dev3 refuted it with the API surface of .NET Framework 4.8
 and no dev4 change touches that path.
 
+### Found during verification (added after the first CI runs)
+
+These are the findings the repository's own gates produced once the candidate was actually compiled and executed, and
+they are recorded here with the same severity scheme because they are exactly the class of defect this audit is for:
+things that source inspection did not reveal and that only a compile or a run could expose.
+
+| # | Surface | Severity | Evidence | Root cause | Remediation | Regression coverage | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 19 | Shared icon handles | High | four settings-window failures in CI: `ObjectDisposedException: Cannot access a disposed object.` | `AppIcon` cached a live `Icon` and returned the same instance to every caller, so the icon test's own `using` disposed it and every window painted afterwards used a destroyed handle | the cache holds the resource bytes only; every call decodes an icon the caller owns, and no instance is ever shared | `IconResourceCarriesEverySizeTheTrayAndExplorerAskFor` disposes one icon and then proves a later icon, a window icon and the tray icon can still be drawn | **Fixed** in source; verified by the harness run |
+| 20 | Painted fallback owned no handle | Medium | code inspection after finding 19, then the same class of failure in `TrayIcon.CreatePainted` | the fallback built an icon from `Bitmap.GetHicon` and destroyed that handle in a `finally`, so the icon it returned was already dead while still reporting its size — a test that only reads `Width` cannot see it | the fallback encodes a small 32-bit ICO in memory and decodes it, so the returned icon owns its handle; the layout is the same one the shipped asset uses and was validated against an independent ICO reader before being written in C# | the harness converts the fallback to a bitmap and requires at least one visible pixel, at two sizes | **Fixed** in source; verified by the harness run |
+| 21 | Synthetic scanner test bypassed the provider gate | Medium | `FAIL WindowsEntry.ExplicitCacheNavigationAndScannerOnRealWindowsUia: expected 'Ready', actual 'ContractUnimplemented'` | the dev3 test called the handle overload, which resolves the window's identity, and a synthetic fixture window is not an enabled browser — the refusal was correct product behaviour and the call was wrong | the test asserts the refusal (`ContractUnimplemented`, no tabs, no selected tab) and then exercises the bounded walk through the contract overload with the one contract this build implements | the test itself; the identity gate is covered by `BrowserCatalogTests` and by the isolated Brave run | **Fixed** in source; verified by the harness run |
+
+Two further corrections belong to the same CI round. `Profiles.Clone` was called on three paths and had never been
+written, so the candidate did not compile (`CS0103`); `AppIcon` used `SystemInformation` without importing
+`System.Windows.Forms` (`CS0103`); and the static check's own new path rules used doubled separators and .NET regex
+escaping, which ended the script with no readable reason — it now reports its failures as a check annotation
+(finding list §1 method table). None of those were design defects: they were the ordinary cost of writing C# with no
+compiler available, which is why the gates and not the author are the verification, and why every fix above names the
+run that has to confirm it.
+
 ## 3. The × button: where the time actually went
 
 The owner's report was that the × appears late or not at all. Latency was traced through the source, not guessed at
@@ -141,7 +161,7 @@ platform", which no part of this repository can do today.
 | dev3 baseline versus dev4 candidate numbers | **Pending CI** | Needs the `performance` job, which runs both binaries on one runner. |
 | Pointer-entry → visible latency, scan percentiles | **Pending CI** | Needs the `brave-smoke` job with a disposable profile; the harness prints the numbers and fails on the latency ceiling. |
 | Chrome, Edge, Firefox acceptance | **NOT RUN** | Declared unsupported: the scanner is gated on the tab-access contract, and no acceptance evidence exists for them. Discovery is implemented; detection is not. |
-| Real icon appearance in the tray at 100%/125%/150%/200% | **NOT VERIFIED** | Needs a human eye on a real desktop; the gates prove the frames exist, not that they look right. |
+| Real icon appearance in the tray at 100%/125%/150%/200% | **NOT VERIFIED** | Needs a human eye on a real desktop. What *is* verified: the shipped file has nine 32-bit frames at the documented sizes, every frame lies inside the file, and an independent ICO reader decodes all of them with 252/256, 564/576, 960/1024 and 2040/2304 visible pixels at 16, 24, 32 and 48 pixels — i.e. the small frames are not blank. How they look is still a human judgement. |
 | Audio crackle cause and the effect of the notice-window change | **NOT VERIFIED** | Needs a machine with real audio playback and a loopback capture; see §5. |
 | Physical multi-monitor, mixed DPI, native 32-bit Windows | **NOT RUN** | CI runners are single-display at 96 DPI on an x64 host. |
 | Settings window at 200% text scaling and at its minimum width, in both languages | **NOT VERIFIED** | Layout is asserted for the model, not visually reviewed. |

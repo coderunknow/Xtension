@@ -380,3 +380,49 @@ patching, and `tools/api-check.py` complaints were resolved by renaming code, ne
 **Not claimed:** nothing was compiled or run here. The audio crackle was not reproduced and the notice-window change is
 a candidate fix, not a verified one. The icon was not looked at on a scaled tray. Chrome, Edge and Firefox are not
 supported. macOS and Linux are not supported.
+
+## 2026-10-16 - dev4 verification: what the gates found, and how the candidate got there
+
+Written after the candidate had been compiled and executed by the repository's own CI for the first time. Nothing here
+replaces the implementation entry above; it is the record of what verification actually caught, in the order it
+happened, because that is the part a reader cannot reconstruct from the final diff.
+
+1. **The static check said nothing at all.** The first CI run failed in fourteen seconds with no annotation and no log
+   reason. Two defects in the check itself: the new required-file entries used doubled path separators, and the new
+   path comparisons were regular expressions in which `\x` is a hex escape, so `assets\xtension.ico` was an invalid
+   pattern that terminated the script. Both are fixed, and a `trap` now reports the collected failures plus the error
+   as a check annotation, so a red static job explains itself instead of needing a log download.
+2. **The candidate did not compile, twice.** `Profiles.Clone` was called on three paths and never written, and
+   `AppIcon` used `SystemInformation` (in `System.Windows.Forms`) after importing only `System`, `System.Drawing`,
+   `System.IO` and `System.Reflection`. Both are the cost of writing C# with no compiler available; both are now fixed
+   and both are named in `docs/DEV4_AUDIT.md`.
+3. **Three unit tests failed, and the tests were the wrong ones.** Two of the four new suites had expectations written
+   before they had ever run: `MetricsTests` asserted a request count it never produced, and `BackupTests` assumed the
+   rejected-key report keeps insertion order while `SettingsBackup` sorts it deliberately so the same document always
+   produces the same list for the user to read. The third was neither: `BrowserCatalogTests` expected an unsupported
+   browser never to be "enabled", and the product only required the mask bit. Rather than weaken the test, the product
+   was changed: `IsEnabled` now requires the browser to be supported as well, so a future call site that forgets the
+   support check still cannot scan a browser this build does not implement.
+4. **The Windows harness found four real defects.** Four settings-window tests died with
+   `ObjectDisposedException: Cannot access a disposed object.` because `AppIcon` cached *live icon handles* and returned
+   the same instance to every caller, so the icon test's own `using` destroyed the handle every window still used. The
+   same round exposed the painted fallback returning an icon whose handle it had already destroyed, and a dev3 scanner
+   test that called the handle overload on a synthetic window which is not an enabled browser - the gate refused it,
+   correctly, and the test was calling the wrong overload. All three are fixed: the icon cache holds bytes and hands
+   out a caller-owned instance per call, the fallback encodes and decodes a real 32-bit ICO (layout validated against
+   an independent ICO reader before being written in C#), and the scanner test now asserts the refusal and then
+   exercises the walk through the contract overload while still saying in its own comments that a synthetic window is
+   not evidence that a real browser works.
+5. **All local gates were re-run after every change** (`tools/api-check.py`, `tools/verify-source.py`, plus three
+   purpose-written heuristics: a tree-sitter member-existence check, an arity check for qualified calls on repository
+   types, and an unqualified-BCL-type check). Every complaint was fixed in the code, never in the check. The icon asset
+   was additionally verified with an independent reader: nine frames, all 32-bit, all inside the file, and 252/256,
+   564/576, 960/1024 and 2040/2304 visible pixels at 16, 24, 32 and 48 pixels.
+6. **Local git state was rolled back once by the environment.** After the first push, the checkout was found rewritten
+   to a fresh clone of the session branch, with the work present in the working tree but the local commits gone; the
+   remote still held them. The local branch was restored with `git reset --mixed origin/arena/9ec9bbb9-xtension`, which
+   touches neither the working tree nor `main`, and the work continued from the remote tip. `main` was never modified
+   by this session and no force-push was used at any point.
+
+Not claimed: at the time of writing, the CI jobs after these fixes have not finished, so this entry records what was
+found and what was changed - not that the candidate is green. The final report records the runs.
