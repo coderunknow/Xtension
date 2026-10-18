@@ -67,6 +67,24 @@ namespace Xtension
             return text.ToString();
         }
 
+        /// <summary>Includes future settings so exporting and restoring does not silently discard them.</summary>
+        public static string Export(AppSettings settings, SettingsStore store)
+        {
+            StringBuilder text = new StringBuilder(Export(settings));
+            if (store != null)
+            {
+                foreach (string key in store.Keys)
+                {
+                    if (Array.IndexOf(AppSettings.KnownKeys, key) >= 0 || IsMetadataKey(key)) continue;
+                    text.Append(key).Append('=').Append(store.GetRaw(key)).Append("\r\n");
+                }
+            }
+            string document = text.ToString();
+            if (Encoding.UTF8.GetByteCount(document) > AppInfo.MaxSettingsBackupBytes)
+                throw new InvalidOperationException("Backup exceeds the supported size.");
+            return document;
+        }
+
         /// <summary>
         /// Parses and validates a backup document. Nothing is written here: the caller applies the outcome through the
         /// normal settings path, and can abandon it without touching the current configuration.

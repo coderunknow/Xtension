@@ -128,6 +128,20 @@ namespace Xtension.Tests
                     }
                     Console.WriteLine("PASS three tab switches followed by actual overlay");
 
+                    string beforeStressSelected;
+                    List<string> beforeStress = CaptureTabIds(brave, out beforeStressSelected);
+                    for (int index = 0; index < 24; index++)
+                    {
+                        Key(0x11, false); Key(0x09, false); Key(0x09, true); Key(0x11, true);
+                        Thread.Sleep(25);
+                    }
+                    WaitForOverlay(app.Id, brave, 7000);
+                    string afterStressSelected;
+                    List<string> afterStress = CaptureTabIds(brave, out afterStressSelected);
+                    Assert.AreEqual(beforeStress.Count, afterStress.Count, "rapid switching never closes a tab");
+                    foreach (string id in beforeStress) Assert.IsTrue(afterStress.Contains(id), "every original tab survives switching");
+                    Console.WriteLine("PASS 24 rapid selection switches preserve every tab and converge to validated overlay");
+
                     // A second browser window must not inherit the first window's confirmation.
                     Key(0x11, false); Key(0x4E, false); Key(0x4E, true); Key(0x11, true);
                     IntPtr second = IntPtr.Zero;

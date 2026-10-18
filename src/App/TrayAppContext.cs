@@ -345,7 +345,7 @@ namespace Xtension
         {
             try
             {
-                string document = SettingsBackup.Export(_settings);
+                string document = SettingsBackup.Export(_settings, _settingsStore);
                 File.WriteAllText(path, document, new UTF8Encoding(false));
                 AppLog.Info("Settings exported to a user-chosen file.");
                 return Strings.Get(StringId.BackupExportDone, path);
@@ -369,7 +369,7 @@ namespace Xtension
                 FileInfo info = new FileInfo(path);
                 if (!info.Exists) return Strings.Get(StringId.BackupImportFailed, "file not found");
                 // A backup is a settings file: the same size ceiling applies, checked before reading it.
-                if (info.Length > 4L * AppInfo.MaxSettingsBackupBytes) return Strings.Get(StringId.BackupImportTooLarge);
+                if (info.Length > AppInfo.MaxSettingsBackupBytes) return Strings.Get(StringId.BackupImportTooLarge);
 
                 BackupImportResult outcome = SettingsBackup.Parse(File.ReadAllText(path));
                 if (!outcome.Accepted)

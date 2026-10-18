@@ -146,6 +146,7 @@ namespace Xtension
                 return true;
             }
 
+            CancelPendingClick();
             // Position before first Show: avoid flashing a clickable button at an old/default location.
             if (!Visible) { Bounds = bounds; Show(); }
             bool moved = NativeMethods.SetWindowPos(Handle, NativeMethods.HwndTopmost,
@@ -168,6 +169,14 @@ namespace Xtension
                 Invalidate();
             }
             return true;
+        }
+
+        /// <summary>A press must never survive a change of displayed identity or placement.</summary>
+        public void CancelPendingClick()
+        {
+            _armed = false;
+            _pressed = false;
+            Capture = false;
         }
 
         protected override void OnVisibleChanged(EventArgs e)

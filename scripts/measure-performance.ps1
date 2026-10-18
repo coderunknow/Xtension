@@ -12,6 +12,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Candidate,
     [ValidateSet('x86', 'x64')][string]$Arch = 'x64',
     [int]$Seconds = 20,
+    [ValidateRange(1, 5)][int]$Repetitions = 3,
     [string]$BaselineLabel = 'published-baseline',
     [string]$CandidateLabel = 'candidate',
     [string]$BraveTag = 'v1.97.56'
@@ -65,6 +66,7 @@ if (Test-Path -LiteralPath $settingsPath) { Remove-Item -LiteralPath $settingsPa
 function Invoke-Measurement {
     param([string]$Binary, [string]$Label, [string]$Scenario, [string]$BravePath, [string]$ProfilePath)
     Stop-Xtension
+    if ($ProfilePath -and (Test-Path -LiteralPath $ProfilePath)) { Remove-Item -LiteralPath $ProfilePath -Recurse -Force }
     $arguments = @('--measure', $Binary, "$Seconds", "$Label-$Scenario")
     if ($BravePath) { $arguments += @($BravePath, $ProfilePath) }
     # The harness reads the log bytes this run appended and prints one MEASURE-LATENCY line; the script only has to
@@ -94,10 +96,16 @@ Add-Content -LiteralPath $report -Value ("# baseline=" + (Split-Path -Leaf $Base
 Add-Content -LiteralPath $report -Value ("# os=" + [System.Environment]::OSVersion.Version + " cores=" + [System.Environment]::ProcessorCount) -Encoding ascii
 
 try {
-    Invoke-Measurement -Binary $Baseline -Label $BaselineLabel -Scenario 'idle-no-browser' -BravePath $null -ProfilePath $null
-    Invoke-Measurement -Binary $Candidate -Label $CandidateLabel -Scenario 'idle-no-browser' -BravePath $null -ProfilePath $null
-    Invoke-Measurement -Binary $Baseline -Label $BaselineLabel -Scenario 'browser-foreground' -BravePath $brave -ProfilePath $profile
-    Invoke-Measurement -Binary $Candidate -Label $CandidateLabel -Scenario 'browser-foreground' -BravePath $brave -ProfilePath $profile
+    for ($sample = 1; $sample -le $Repetitions; $sample++) {
+        # Alternate order to expose warm-up/order effects instead of always favouring the second process.
+        $pairs = if ($sample % 2 -eq 1) { @(@($Baseline, $BaselineLabel), @($Candidate, $CandidateLabel)) } else { @(@($Candidate, $CandidateLabel), @($Baseline, $BaselineLabel)) }
+        foreach ($pair in $pairs) {
+            Invoke-Measurement -Binary $pair[0] -Label ($pair[1] + '-r' + $sample) -Scenario 'idle-no-browser' -BravePath $null -ProfilePath $null
+        }
+        foreach ($pair in $pairs) {
+            Invoke-Measurement -Binary $pair[0] -Label ($pair[1] + '-r' + $sample) -Scenario 'browser-foreground' -BravePath $brave -ProfilePath $profile
+        }
+    }
 }
 finally {
     Stop-Xtension

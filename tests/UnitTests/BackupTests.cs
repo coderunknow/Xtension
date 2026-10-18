@@ -13,6 +13,28 @@ namespace Xtension.Tests
     internal static class BackupTests
     {
         [Test]
+        public static void ExportAndRestoreRetainFutureValuesWithoutMetadataOverride()
+        {
+            string directory = Path.Combine(Path.GetTempPath(), "Xtension-backup-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            try
+            {
+                SettingsStore store = new SettingsStore(Path.Combine(directory, "source.ini"));
+                store.SetString("futureOption", "value=with-equals");
+                store.SetString("schema", "999");
+                string document = SettingsBackup.Export(AppSettings.Defaults(), store);
+                BackupImportResult parsed = SettingsBackup.Parse(document);
+                Assert.IsTrue(parsed.Accepted, "metadata cannot override export schema");
+                Assert.AreEqual("value=with-equals", parsed.PreservedValues["futureOption"], "future value exported");
+                SettingsStore target = new SettingsStore(Path.Combine(directory, "target.ini"));
+                string failure;
+                Assert.IsTrue(SettingsBackup.ApplyToStore(target, parsed, out failure), "restore succeeds: " + failure);
+                Assert.AreEqual("value=with-equals", target.GetRaw("futureOption"), "future value survives full round trip");
+            }
+            finally { Directory.Delete(directory, true); }
+        }
+
+        [Test]
         public static void ExportAndImportRoundTripEverySetting()
         {
             AppSettings source = AppSettings.Defaults();
@@ -145,7 +167,7 @@ namespace Xtension.Tests
         {
             string document = "schema=1\r\nproduct=Xtension\r\nappVersion=0.0.0\r\n"
                 + AppSettings.ButtonSizeKey + "=not-a-number\r\n"
-                + AppSettings.BrowsersKey + "=chrome\r\n";
+                + AppSettings.BrowsersKey + "=firefox\r\n";
             BackupImportResult imported = SettingsBackup.Parse(document);
             Assert.IsTrue(imported.Accepted, "one bad value does not discard the whole document: " + imported.Failure);
             Assert.AreEqual(2, imported.RejectedKeys.Count, "both unusable keys are reported: " + imported.RejectedKeys.Count);

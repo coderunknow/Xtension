@@ -83,6 +83,7 @@ namespace Xtension
         /// <summary>Rectangle the overlay was last placed and verified at, so a real move can be logged once.</summary>
         private Rectangle _placedTarget = Rectangle.Empty;
         private bool _placedVisible;
+        private int[] _displayedTabRuntimeId;
         /// <summary>Hover mode: was the pointer inside the tab strip on the previous tick?</summary>
         private bool _stripPointerInside;
 
@@ -717,6 +718,8 @@ namespace Xtension
                 HideOverlay();
                 return;
             }
+            if (!TabInfo.SameIdentity(_displayedTabRuntimeId, result.SelectedHorizontalTab.RuntimeId))
+                _overlay.CancelPendingClick();
             string failure;
             if (!_overlay.ShowAt(target, out failure))
             {
@@ -725,6 +728,7 @@ namespace Xtension
                 _placedVisible = false;
                 return;
             }
+            _displayedTabRuntimeId = (int[])result.SelectedHorizontalTab.RuntimeId.Clone();
             _overlayFailure = string.Empty;
             // One log line per real placement change: counts and timings only, never a title or a URL. This is what
             // lets an external measurement compare its own clock with the moment the × became visible.
@@ -774,8 +778,7 @@ namespace Xtension
 
             // Capture the displayed target before invalidation. A new selected tab at the same coordinates is NOT
             // the target the user clicked. Missing identity refuses; no title-based fallback is permitted.
-            TabInfo displayed = _latest == null ? null : _latest.SelectedHorizontalTab;
-            int[] expected = displayed == null || displayed.RuntimeId == null ? null : (int[])displayed.RuntimeId.Clone();
+            int[] expected = _displayedTabRuntimeId == null ? null : (int[])_displayedTabRuntimeId.Clone();
             bool wasVisible = _overlay.Visible;
             // Hide first: the button must not stay clickable while its validation is pending.
             HideOverlay();
@@ -914,6 +917,7 @@ namespace Xtension
 
         private void HideOverlay()
         {
+            _displayedTabRuntimeId = null;
             if (_overlay.Visible)
             {
                 _overlay.Hide();

@@ -508,3 +508,7 @@ Read AGENTS.md first; fetched origin/tags, checked status, branches, PR history,
 ## 2026-10-18 — first dev5 implementation, CI pending
 
 Implemented audit D5-01–08 and regression tests; changed VERSION only for version generation. Expanded browser harness to explicit browser selection, signed hosted Chrome/Edge fixtures and disabled-by-default refusal; added six architecture/browser CI combinations and switched baseline to dev4. Python API/static aids pass. No actual PowerShell/C# execution locally, no performance or browser result yet. Removed importer rollback rewrite: the now transactional atomic store leaves old cache/file unchanged on failure instead of rewriting good bytes non-atomically. Candidate release gates remain pending.
+
+## 2026-10-18 — CI round one and additional regressions
+
+Run 39106016202 failed core suite (97 passed, 1 failed): BackupTests still considered Chrome unsupported. Invalid provider fixture changed to Firefox without removing assertions. Added held-press cancellation on identity/placement change, settings backup future-key round trip, three-repeat alternating performance protocol and independent dev4 hash/version/source check. Added 24-switch real-browser stress preserving the full tab set. Windows GUI/build evidence remains pending; no browser is promoted to verified yet.

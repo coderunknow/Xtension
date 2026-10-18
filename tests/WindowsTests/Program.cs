@@ -43,6 +43,32 @@ namespace Xtension.Tests
         }
 
         [Test]
+        public static void OverlayPressCannotSurviveTargetOrGeometryChange()
+        {
+            using (CloseButtonOverlay overlay = new CloseButtonOverlay())
+            {
+                string failure;
+                overlay.ShowAt(new Rectangle(100, 100, 26, 26), out failure);
+                int clicks = 0;
+                overlay.Clicked += delegate { clicks++; };
+                System.Reflection.MethodInfo down = typeof(CloseButtonOverlay).GetMethod("OnMouseDown", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                System.Reflection.MethodInfo up = typeof(CloseButtonOverlay).GetMethod("OnMouseUp", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                MouseEventArgs mouse = new MouseEventArgs(MouseButtons.Left, 1, 13, 13, 0);
+                down.Invoke(overlay, new object[] { mouse });
+                overlay.CancelPendingClick();
+                up.Invoke(overlay, new object[] { mouse });
+                Assert.AreEqual(0, clicks, "identity change cancels a held press even at identical bounds");
+                down.Invoke(overlay, new object[] { mouse });
+                overlay.ShowAt(new Rectangle(101, 100, 26, 26), out failure);
+                up.Invoke(overlay, new object[] { mouse });
+                Assert.AreEqual(0, clicks, "move cancels a held press");
+                down.Invoke(overlay, new object[] { mouse });
+                up.Invoke(overlay, new object[] { mouse });
+                Assert.AreEqual(1, clicks, "unchanged target still reports a normal click");
+            }
+        }
+
+        [Test]
         public static void ControllerSettingsSnapshotMatchesAppliedValuesAndIsIsolated()
         {
             using (Control invoker = new Control())

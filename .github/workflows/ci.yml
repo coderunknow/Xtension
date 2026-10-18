@@ -132,7 +132,16 @@ jobs:
           $expected = ($line[0] -split '  ', 2)[0]
           $actual = (Get-FileHash -LiteralPath (Join-Path $destination $asset) -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -ne $expected) { throw 'Published baseline checksum mismatch.' }
-          Write-Host "::notice title=Published baseline under measurement::$asset sha256=$actual"
+          & git fetch --no-tags origin "refs/tags/${tag}:refs/tags/${tag}"
+          if ($LASTEXITCODE -ne 0) { throw 'Baseline source tag fetch failed.' }
+          $sourceVersion = (& git show "${tag}:VERSION").Trim()
+          if ($LASTEXITCODE -ne 0 -or $tag -ne "v$sourceVersion") { throw 'Baseline source/version mismatch.' }
+          $binary = Join-Path $destination $asset
+          if ([System.Diagnostics.FileVersionInfo]::GetVersionInfo($binary).ProductVersion -ne $sourceVersion) { throw 'Baseline executable version mismatch.' }
+          # The published dev4 x64 hash is pinned independently of the downloaded manifest.
+          if ($actual -ne '35b5a67b2c416666b61d43dc1451e8e17c49c081c65226ec5e8cea407c6cce82') { throw 'Baseline differs from recorded dev4 bytes.' }
+          $baselineCommit = (& git rev-parse "${tag}^{}").Trim()
+          Write-Host "::notice title=Published baseline under measurement::$asset sha256=$actual source=$baselineCommit version=$sourceVersion"
       - name: Measure both shipped EXEs on this runner
         shell: powershell
         env:
