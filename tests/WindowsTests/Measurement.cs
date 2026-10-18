@@ -25,6 +25,7 @@ namespace Xtension.Tests
 
         [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr state);
         [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
+        [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
         [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hwnd, int command);
 
         private static readonly List<IntPtr> Collected = new List<IntPtr>();
@@ -138,6 +139,7 @@ namespace Xtension.Tests
                 // field is a counter or a millisecond value; nothing private is involved. Missing values are reported
                 // as "n/a" rather than as zero, so an absent measurement can never look like a fast one.
                 Console.WriteLine(BuildLatencyLine(label, logPath, offset));
+                if (braveWindow != IntPtr.Zero) SampleReaction(app.Id, braveWindow, label);
                 return 0;
             }
             catch (Exception ex)
@@ -152,6 +154,57 @@ namespace Xtension.Tests
                 Kill(browser);
                 Thread.Sleep(1000);
             }
+        }
+
+        private static void SampleReaction(int processId, IntPtr browserWindow, string label)
+        {
+            List<double> timings = new List<double>();
+            const int requested = 5;
+            for (int sample = 0; sample < requested; sample++)
+            {
+                SetForegroundWindow(browserWindow);
+                ScanResult before = UiaTabScanner.Scan(browserWindow, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
+                if (before.Outcome != ScanOutcome.Ready || NativeMethods.GetForegroundRootWindow() != browserWindow) continue;
+                System.Drawing.Rectangle prior = TabGeometry.GetOverlayBounds(before.SelectedHorizontalTab.Bounds, before.Dpi,
+                    AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
+                IntPtr overlay = FindVisibleWindow(processId, true);
+                if (overlay == IntPtr.Zero || NativeMethods.GetWindowBounds(overlay) != prior) continue;
+                Stopwatch reaction = Stopwatch.StartNew();
+                // Read-only fixture navigation, never a close command. Always release modifiers.
+                keybd_event(0x11, 0, 0, UIntPtr.Zero);
+                try { keybd_event(0x09, 0, 0, UIntPtr.Zero); }
+                finally
+                {
+                    keybd_event(0x09, 0, 2, UIntPtr.Zero);
+                    keybd_event(0x11, 0, 2, UIntPtr.Zero);
+                }
+                System.Drawing.Rectangle observed = System.Drawing.Rectangle.Empty;
+                while (reaction.ElapsedMilliseconds < 5000)
+                {
+                    overlay = FindVisibleWindow(processId, true);
+                    if (overlay != IntPtr.Zero)
+                    {
+                        observed = NativeMethods.GetWindowBounds(overlay);
+                        if (observed != prior) break;
+                    }
+                    Thread.Sleep(10);
+                }
+                reaction.Stop();
+                ScanResult after = UiaTabScanner.Scan(browserWindow, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
+                if (observed.IsEmpty || observed == prior || after.Outcome != ScanOutcome.Ready
+                    || TabInfo.SameIdentity(before.SelectedHorizontalTab.RuntimeId, after.SelectedHorizontalTab.RuntimeId)
+                    || NativeMethods.GetForegroundRootWindow() != browserWindow) continue;
+                System.Drawing.Rectangle expected = TabGeometry.GetOverlayBounds(after.SelectedHorizontalTab.Bounds, after.Dpi,
+                    AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
+                if (observed == expected) timings.Add(reaction.ElapsedMilliseconds);
+                Thread.Sleep(150);
+            }
+            timings.Sort();
+            Console.WriteLine("MEASURE-REACTION label=" + label + " requested=" + requested + " samples=" + timings.Count
+                + " failed=" + (requested - timings.Count)
+                + " tabSwitchToVisibleMsP50=" + (timings.Count == 0 ? "n/a" : Percentile(timings, 0.50).ToString("F1", CultureInfo.InvariantCulture))
+                + " tabSwitchToVisibleMsP95=" + (timings.Count == 0 ? "n/a" : Percentile(timings, 0.95).ToString("F1", CultureInfo.InvariantCulture))
+                + " tabSwitchToVisibleMsMax=" + (timings.Count == 0 ? "n/a" : timings[timings.Count - 1].ToString("F1", CultureInfo.InvariantCulture)));
         }
 
         /// <summary>
@@ -286,7 +339,7 @@ namespace Xtension.Tests
         private static double Percentile(List<double> sorted, double fraction)
         {
             if (sorted.Count == 0) return 0;
-            int index = (int)Math.Round((sorted.Count - 1) * fraction);
+            int index = (int)Math.Ceiling(sorted.Count * fraction) - 1;
             if (index < 0) index = 0;
             if (index >= sorted.Count) index = sorted.Count - 1;
             return sorted[index];
@@ -314,8 +367,11 @@ namespace Xtension.Tests
                 if (owner != (uint)processId) return true;
                 if (!NativeMethods.IsWindowVisible(hwnd)) return true;
                 System.Drawing.Rectangle bounds = NativeMethods.GetWindowBounds(hwnd);
-                if (bounds.Width < 40 || bounds.Height < 40) return true;
-                if (!allowSmall && bounds.Width < 200) return true;
+                if (allowSmall)
+                {
+                    if (bounds.Width < 18 || bounds.Width > 80 || bounds.Height < 18 || bounds.Height > 80) return true;
+                }
+                else if (bounds.Width < 200 || bounds.Height < 100) return true;
                 Collected.Add(hwnd);
                 return true;
             }, IntPtr.Zero);

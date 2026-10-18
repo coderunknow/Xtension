@@ -11,8 +11,10 @@ Candidate under verification; not yet published. Windows x86/x64, .NET Framework
 - Make settings writes transactional across disk and cache. Failed writes/invalid batches cannot leak into later saves; reject line injection and oversized output.
 - Keep controller snapshots isolated and synchronize appearance/language/enabled values through the established settings path.
 - Marshal scan-trigger state onto the UI thread, ignore unrelated system events and include close-lane timing in diagnostics.
-- Candidate Chrome/Edge opt-in providers and six real-browser architecture jobs. Support acceptance is pending; no new published support claim yet. Existing installations remain Brave-only.
+- Add opt-in Chrome after independent actual-EXE acceptance in both architectures. Edge failed the unchanged depth cap on restart and is explicitly disabled; real Edge refusal is tested, not called support. Existing installations remain Brave-only.
 - Use the published dev4 EXE, checksum-verified on the Windows runner, for the resource baseline. Do not silently skip failed latency samples.
+- Cancel held presses on overlay placement/identity replacement; repair same-window UIA event resubscription and keep backup-import results visible. Report real per-lane scan/queue timings.
+- Export/import bounded unknown future settings as well as known keys; clarify defaults, clamping and backup privacy in both languages.
 - Owner reports historical audio distortion is no longer observed; no causal fix claimed and sound-free notices are retained.
 
 See `docs/DEV5_AUDIT.md` for evidence, acceptance state and remaining risks.

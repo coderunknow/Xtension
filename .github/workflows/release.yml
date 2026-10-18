@@ -76,7 +76,7 @@ jobs:
           retention-days: 2
 
   browser-acceptance:
-    name: Release browser ${{ matrix.browser }} ${{ matrix.arch }}
+    name: Release browser ${{ matrix.browser }} ${{ matrix.arch }} (${{ matrix.browser == 'edge' && 'refusal' || 'acceptance' }})
     needs: build
     runs-on: windows-latest
     timeout-minutes: 15
@@ -96,9 +96,9 @@ jobs:
       - name: Build and exercise harness without replacing release executable
         shell: powershell
         run: ./scripts/test-windows.ps1 -Arch ${{ matrix.arch }}
-      - name: Accept exact release executable with isolated browser profile
+      - name: Verify exact release executable with isolated browser profile
         shell: powershell
-        run: ./scripts/test-brave.ps1 -Arch ${{ matrix.arch }} -Browser ${{ matrix.browser }}
+        run: ./scripts/test-brave.ps1 -Arch ${{ matrix.arch }} -Browser ${{ matrix.browser }} -ExpectUnsupported:('${{ matrix.browser }}' -eq 'edge')
 
   publish:
     name: Publish prerelease
@@ -148,6 +148,8 @@ jobs:
           if ((Get-FileHash $manifest).Hash -ne (Get-FileHash 'dist/release/SHA256SUMS.txt').Hash) {
             throw 'Published checksum manifest differs from packaged manifest.'
           }
+          $manifestHash = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "::notice title=Published asset verified::SHA256SUMS.txt sha256=$manifestHash"
           foreach ($line in Get-Content -LiteralPath $manifest) {
             $parts = $line -split '  ', 2
             $hash = (Get-FileHash -LiteralPath (Join-Path $destination $parts[1]) -Algorithm SHA256).Hash.ToLowerInvariant()

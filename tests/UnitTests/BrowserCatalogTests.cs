@@ -31,15 +31,14 @@ namespace Xtension.Tests
         [Test]
         public static void ASharedEngineIsNeverEvidenceOfSupport()
         {
-            // Brave, Chrome and Edge declare the same Chromium tab contract. Only Brave has a real-browser acceptance
-            // run, so only Brave may be offered: sharing a rendering engine is not evidence.
+            // Edge shares the family but failed independent acceptance: matching an engine does not grant support.
             Assert.AreEqual(TabAccessContract.ChromiumSelectionItem, BrowserCatalog.ForExecutable("chrome.exe").Contract,
                 "Chrome declares the Chromium contract");
             Assert.AreEqual(BrowserCatalog.ForExecutable("brave.exe").Contract, BrowserCatalog.ForExecutable("chrome.exe").Contract,
                 "the two Chromium browsers really do share a contract");
             Assert.IsTrue(BrowserCatalog.IsSupported(BrowserKind.Brave), "Brave is verified");
             Assert.IsTrue(BrowserCatalog.IsSupported(BrowserKind.Chrome), "Chrome implements the tested contract");
-            Assert.IsTrue(BrowserCatalog.IsSupported(BrowserKind.Edge), "Edge implements the tested contract");
+            Assert.IsFalse(BrowserCatalog.IsSupported(BrowserKind.Edge), "Edge failed independent acceptance and is quarantined");
             Assert.IsFalse(BrowserCatalog.IsSupported(BrowserKind.Firefox), "Firefox is not verified");
             Assert.IsFalse(BrowserCatalog.IsSupported(BrowserKind.None), "no window is not a supported browser");
         }
@@ -56,8 +55,8 @@ namespace Xtension.Tests
                 Assert.IsTrue(evidence.StartsWith(descriptor.Token + "@", StringComparison.Ordinal),
                     descriptor.Token + " evidence must name the browser and the build version it was recorded for: " + evidence);
             }
-            Assert.IsTrue(string.IsNullOrEmpty(BrowserCatalog.EvidenceFor(BrowserKind.Chrome)),
-                "an unsupported browser must not carry evidence it did not earn");
+            Assert.IsTrue(!string.IsNullOrEmpty(BrowserCatalog.EvidenceFor(BrowserKind.Chrome)), "Chrome carries independent actual-browser evidence");
+            Assert.IsTrue(string.IsNullOrEmpty(BrowserCatalog.EvidenceFor(BrowserKind.Edge)), "Edge must not carry acceptance evidence it did not earn");
         }
 
         [Test]
@@ -81,7 +80,7 @@ namespace Xtension.Tests
         public static void OfferableBrowsersAreExactlyTheSupportedOnes()
         {
             BrowserDescriptor[] offerable = BrowserCatalog.Offerable();
-            Assert.AreEqual(3, offerable.Length, "three implemented browsers are offered");
+            Assert.AreEqual(2, offerable.Length, "only accepted Brave and Chrome are offered");
             Assert.AreEqual(BrowserKind.Brave, offerable[0].Kind, "the offered browser is the verified one");
             foreach (BrowserDescriptor descriptor in offerable)
             {
@@ -93,7 +92,7 @@ namespace Xtension.Tests
         [Test]
         public static void MasksAndTokensRoundTripAndUnsupportedTokensAreDropped()
         {
-            Assert.AreEqual("brave,chrome,edge", BrowserCatalog.MaskTokenList(BrowserCatalog.SupportedMask()), "supported mask");
+            Assert.AreEqual("brave,chrome", BrowserCatalog.MaskTokenList(BrowserCatalog.SupportedMask()), "supported mask");
             int mixed = BrowserCatalog.Mask(BrowserKind.Brave) | BrowserCatalog.Mask(BrowserKind.Chrome);
             Assert.AreEqual("brave,chrome", BrowserCatalog.MaskTokenList(mixed), "opt-in browsers round trip");
             Assert.AreEqual(mixed, BrowserCatalog.ParseMask("brave,chrome"), "explicit opt in");
@@ -113,6 +112,17 @@ namespace Xtension.Tests
             Assert.IsTrue(BrowserCatalog.IsEnabled(mixed, BrowserKind.Chrome), "Chrome requires explicit opt in");
             Assert.IsFalse(BrowserCatalog.IsEnabled(BrowserCatalog.NoBrowsers, BrowserKind.Brave), "an empty mask enables nothing");
             Assert.IsFalse(BrowserCatalog.IsEnabled(mixed, BrowserKind.None), "no window is never enabled");
+        }
+
+        [Test]
+        public static void FailedEdgeProviderCannotBeEnabledByFileOrImport()
+        {
+            Assert.IsFalse(BrowserCatalog.IsScannerImplemented(BrowserKind.Edge), "shared contract cannot override quarantine");
+            Assert.IsFalse(BrowserCatalog.IsEnabled(int.MaxValue, BrowserKind.Edge), "even hostile mask cannot enable Edge");
+            Assert.AreEqual(BrowserCatalog.NoBrowsers, BrowserCatalog.ParseMask("edge"), "file cannot opt into failed provider");
+            BackupImportResult imported = SettingsBackup.Parse("browsers=brave,edge\r\n");
+            Assert.AreEqual(BrowserCatalog.Mask(BrowserKind.Brave), imported.Settings.Browsers, "import drops unsupported Edge");
+            Assert.AreEqual(2, BrowserCatalog.Offerable().Length, "settings only offers accepted providers");
         }
 
         [Test]

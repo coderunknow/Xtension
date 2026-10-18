@@ -76,7 +76,7 @@ function Invoke-Measurement {
     $lines = $execution.Lines
     $code = $execution.ExitCode
     foreach ($line in $lines) {
-        if ($line -like 'MEASURE label=*' -or $line -like 'MEASURE-LATENCY label=*') {
+        if ($line -like 'MEASURE label=*' -or $line -like 'MEASURE-LATENCY label=*' -or $line -like 'MEASURE-REACTION label=*') {
             Write-Host $line
             Add-Content -LiteralPath $report -Value $line
             # The report travels as a download; an annotation travels to the checks page. Neither the label nor the

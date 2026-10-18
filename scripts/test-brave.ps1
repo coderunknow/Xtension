@@ -1,6 +1,6 @@
 # Real Brave smoke on an isolated Windows runner profile. No personal browser data is used or published.
 [CmdletBinding()]
-param([ValidateSet('x86', 'x64')][string]$Arch = 'x64', [ValidateSet('brave', 'chrome', 'edge')][string]$Browser = 'brave')
+param([ValidateSet('x86', 'x64')][string]$Arch = 'x64', [ValidateSet('brave', 'chrome', 'edge')][string]$Browser = 'brave', [switch]$ExpectUnsupported)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($env:GITHUB_ACTIONS -ne 'true') { throw 'This fixture is restricted to disposable GitHub Actions runners, not personal desktops.' }
@@ -46,20 +46,21 @@ $app = Join-Path $root "dist\Xtension-win-$Arch.exe"
 $profile = Join-Path $directory "profile-$Browser-$Arch"
 try {
     Write-Host "::notice title=Browser fixture phase::Start harness for $Browser $Arch"
-    $execution = Invoke-FixtureProcess -Executable $test -Arguments @('--brave', $brave, $app, $profile) -OutputPrefix (Join-Path $directory "acceptance-$Browser-$Arch") -TimeoutSeconds 330
+    $mode = if ($ExpectUnsupported) { '--refuse-browser' } else { '--brave' }
+    $execution = Invoke-FixtureProcess -Executable $test -Arguments @($mode, $brave, $app, $profile) -OutputPrefix (Join-Path $directory "acceptance-$Browser-$Arch") -TimeoutSeconds 330
     $results = $execution.Lines
     $code = $execution.ExitCode
     Write-Host "::notice title=Browser fixture phase::Harness exited for $Browser $Arch (code $code)"
     $evidence = New-Object System.Collections.Generic.List[string]
     foreach ($line in $results) {
         if ($line -like 'PASS *' -or $line -like 'Browser binary*') { $evidence.Add($line) | Out-Null }
-        elseif ($line -like 'FAIL *') { Write-Host ("::error title=Real Brave evidence::" + $line) }
+        elseif ($line -like 'FAIL *') { Write-Host ("::error title=Real browser evidence::" + $line) }
         # Latency evidence is counters and milliseconds only; it carries no title, URL or provider text.
         elseif ($line -like 'INFO latency *') { Write-Host ("::notice title=Latency evidence::" + $line) }
         # Do not forward browser stderr/provider text to persistent workflow logs.
     }
-    Write-Host ("::notice title=Real Brave evidence::" + ($evidence -join " | "))
-    if ($code -ne 0) { throw "Real-Brave smoke failed ($code)." }
+    Write-Host ("::notice title=Real browser evidence::" + ($evidence -join " | "))
+    if ($code -ne 0) { throw "Real-browser fixture failed ($code)." }
 } finally {
     # This script is for a disposable CI runner, never a personal Windows desktop.
     Get-Process -ErrorAction SilentlyContinue | Where-Object {

@@ -155,8 +155,21 @@ jobs:
       - name: Publish complete resource summary
         shell: powershell
         run: |
-          $summary = (Get-Content -LiteralPath dist/perf/performance-x64.txt -Raw).Trim().Replace("`r`n", "%0A").Replace("`n", "%0A")
-          Write-Host ("::notice title=Complete resource comparison::" + $summary)
+          $block = ''
+          $part = 1
+          foreach ($line in (Get-Content -LiteralPath dist/perf/performance-x64.txt)) {
+            if ($block.Length + $line.Length -gt 2800) {
+              $encoded = $block.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Host ("::notice title=Complete resource comparison part " + $part + "::" + $encoded)
+              $part++
+              $block = ''
+            }
+            $block += $line + "`n"
+          }
+          if ($block) {
+            $encoded = $block.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Host ("::notice title=Complete resource comparison part " + $part + "::" + $encoded)
+          }
       - name: Upload resource evidence
         uses: actions/upload-artifact@v4
         with:
@@ -166,7 +179,7 @@ jobs:
           retention-days: 30
 
   brave-smoke:
-    name: Isolated real browser ${{ matrix.browser }} ${{ matrix.arch }}
+    name: Isolated real browser ${{ matrix.browser }} ${{ matrix.arch }} (${{ matrix.browser == 'edge' && 'refusal' || 'acceptance' }})
     strategy:
       fail-fast: false
       matrix:
@@ -245,6 +258,6 @@ jobs:
           if ($actual -ne $expected) { throw 'Published EXE checksum mismatch.' }
           Copy-Item -LiteralPath (Join-Path $destination $asset) -Destination "dist/Xtension-win-$($env:TEST_ARCH).exe" -Force
           Write-Host "::notice title=Published binary under test::$asset sha256=$actual"
-      - name: Run shipped candidate against isolated Brave profile
+      - name: Run shipped candidate against isolated browser profile
         shell: powershell
-        run: ./scripts/test-brave.ps1 -Arch ${{ matrix.arch }} -Browser ${{ matrix.browser }}
+        run: ./scripts/test-brave.ps1 -Arch ${{ matrix.arch }} -Browser ${{ matrix.browser }} -ExpectUnsupported:('${{ matrix.browser }}' -eq 'edge')

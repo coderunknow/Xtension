@@ -3,15 +3,15 @@
 Xtension is a small Windows tray app for supported browsers. It shows one custom **×** on the selected horizontal tab, so you do not close a tab by accident. The × moves when you change tabs. It appears only when Xtension can confirm which tab is active.
 
 > **Status: `v0.1.0-dev5` candidate — release gates in progress.** This version strengthens exact-tab closing,
-> transactional settings and event recovery, adds forward-compatible backups, and independently tests opt-in Chrome
-> and Edge alongside Brave. See [`docs/DEV5_AUDIT.md`](docs/DEV5_AUDIT.md) for actual acceptance state and remaining
+> transactional settings and event recovery, adds forward-compatible backups, and adds independently tested opt-in
+> Chrome alongside Brave. Edge failed acceptance and is explicitly disabled. See [`docs/DEV5_AUDIT.md`](docs/DEV5_AUDIT.md) for actual acceptance state and remaining
 > limitations. Source and a build are not proof of GUI behavior. Publication is confirmed only on the
 > [Releases page](https://github.com/coderunknow/Xtension/releases).
 
 ## Requirements
 
 - Windows 10 or 11, x86 or x64.
-- A supported browser with horizontal tabs; Brave is enabled by default. Chrome and Edge require explicit opt-in.
+- A supported browser with horizontal tabs; Brave is enabled by default. Chrome requires explicit opt-in; Edge and Firefox are unsupported.
 - .NET Framework 4.8 runtime.
 - No administrator rights. Xtension runs as your user.
 
@@ -53,7 +53,7 @@ Open Settings from the tray or dashboard for the options below. Changes apply im
 | Scan interval | 300–2000 ms between UI Automation scans while an enabled supported browser is in front | 500 ms |
 | Interface language | Tiếng Việt / English | Tiếng Việt |
 | Performance profile | `balanced`, `fast`, `low-resource`, `custom` | `balanced` |
-| Browsers to watch | Brave; opt-in Chrome and Edge (candidate acceptance pending); Firefox unsupported | Brave |
+| Browsers to watch | Brave; opt-in Chrome; Edge/Firefox unsupported | Brave |
 | × colour | `dark`, `red`, `blue`, `green` | `dark` |
 | × border | on / off | on |
 | × opacity | 30–100%, applied as uniform window alpha so the hit area never changes | 100% |
@@ -102,10 +102,11 @@ Native close buttons: if Brave's own "Always hide tab close button" setting is o
 ## Browsers
 
 Xtension scans only an exact known foreground process image whose provider is implemented and which you enabled.
-Brave uses the verified Chromium selection contract. Chrome and Edge now have explicit opt-in candidate providers
-using direct UIA Tab → TabItem parentage, known unique SelectionItem selection, runtime identity and horizontal
-geometry. They remain experimental until their actual EXE/browser acceptance is recorded in the dev5 audit. Browser
-ancestry or process discovery is never acceptance. Firefox's Gecko provider is unimplemented and always refuses.
+Brave and Chrome have independently exercised contracts using direct UIA Tab → TabItem parentage, known unique
+SelectionItem selection, runtime identity and horizontal geometry. Chrome passed actual EXE acceptance in both
+architectures. **Edge is unsupported:** its attempted acceptance reproducibly exhausted the unchanged depth cap after
+restart, so its provider is disabled and cannot be opted into. CI verifies detection-only refusal against real Edge,
+not support. Firefox's Gecko provider remains unimplemented. See the dev5 audit for versions, failed runs and evidence.
 
 Existing settings and new defaults remain **Brave-only** (`browsers=brave`). Enable additional browsers in Settings;
 clearing a browser disables placement and closing there. Native browser close buttons are not hidden or changed by
@@ -131,7 +132,7 @@ Xtension. The Brave appearance-settings shortcut is deliberately Brave-specific,
 - Depends on each browser's accessibility tree. A browser update that changes it causes the × to hide, not to guess.
 - A tab switch in the short gap between confirmation and the keystroke cannot be prevented by any available API. This residual risk is recorded in `DESIGN_LOG.md`.
 - Vertical tabs and pinned or scrolled-out tabs are not treated as the target.
-- Firefox is unsupported. Candidate Chrome/Edge support is not a promise about every browser version; actual tested
+- Firefox is unsupported. Brave/Chrome support is not a promise about every browser version; actual tested
   versions and architecture results belong in the audit.
 - Physical multi-monitor/mixed-DPI behavior, native 32-bit Windows and genuinely hung providers still need relevant
   environments; scaled-font and x86-process CI tests are not substitutes.
@@ -164,7 +165,7 @@ The version comes only from `VERSION`. Edit that file to change it.
 | Unit tests (pure core) | Run in CI. |
 | x86 and x64 builds | Run in CI. Verified in CI; release builds are produced by the tag workflow. |
 | Windows UIA fixture / scaled-font layout | Run in CI in both architectures; not real-browser or physical-monitor validation. Includes settings-window layout at 100/125/150/200% text scaling, the language toggle, overlay resize and a delivered Ctrl+W chord. |
-| Real browsers | Brave x86/x64 passed on intermediate dev5 commit `802b203` (run `39106587826`); Chrome/Edge acceptance is pending. Final exact-head results belong in the dev5 audit. |
+| Real browsers | Brave x86/x64 passed on intermediate dev5 commit `802b203` (run `39106587826`); Chrome subsequently passed; Edge failed and is disabled. Final exact-head results belong in the dev5 audit. |
 | Published dev4 vs candidate resources | Three 20-second observations per binary/state, alternating order on one runner; startup, CPU, working/private memory, handles, scan/queue counters. Raw evidence and limitations in the audit; no percentage speedup claim. |
 | Application icon | Frames/decoding are tested; human visual appearance at scaled tray sizes is **not verified**. |
 | Audio | Owner reports historical distortion is **not currently observed**; causal root cause remains unconfirmed. |

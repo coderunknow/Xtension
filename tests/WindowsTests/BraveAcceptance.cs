@@ -21,7 +21,7 @@ namespace Xtension.Tests
         [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
         [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
 
-        public static int Run(string bravePath, string candidatePath, string profile)
+        public static int Run(string bravePath, string candidatePath, string profile, bool requireRefusal = false)
         {
             BrowserDescriptor descriptor = BrowserCatalog.ForExecutable(Path.GetFileName(bravePath));
             if (descriptor == null) return 2;
@@ -32,6 +32,11 @@ namespace Xtension.Tests
             {
                 try
                 {
+                    if (requireRefusal)
+                    {
+                        ExerciseRefusal(bravePath, candidatePath, profile);
+                        return;
+                    }
                     Exercise(bravePath, candidatePath, profile);
                     // Second phase: the same shipped binary, started from a settings file that selects the new
                     // hover mode and a non-default button size. It runs after the first app process is gone, because
@@ -49,8 +54,59 @@ namespace Xtension.Tests
                 Console.WriteLine("FAIL Brave acceptance: " + failure.GetType().Name + ": " + failure.Message);
                 return 1;
             }
-            Console.WriteLine("PASS isolated real-browser smoke; not a full desktop/DPI acceptance matrix.");
+            Console.WriteLine(requireRefusal ? "PASS unsupported browser refusal only; NOT support acceptance."
+                : "PASS isolated real-browser smoke; not a full desktop/DPI acceptance matrix.");
             return 0;
+        }
+
+        private static void ExerciseRefusal(string browserPath, string candidatePath, string profile)
+        {
+            BrowserDescriptor descriptor = BrowserCatalog.ForExecutable(Path.GetFileName(browserPath));
+            Assert.IsTrue(descriptor != null && !descriptor.ScannerImplemented
+                && descriptor.Support == BrowserSupport.Unsupported, "explicit quarantine, not an acceptance shortcut");
+            AppPaths.EnsureDirectory();
+            string original = File.Exists(AppPaths.SettingsFile) ? File.ReadAllText(AppPaths.SettingsFile) : null;
+            Process app = null;
+            try
+            {
+                using (Process browser = Process.Start(new ProcessStartInfo(browserPath,
+                    "--user-data-dir=\"" + profile + "\" --no-first-run --no-default-browser-check --disable-background-networking --new-window about:blank about:blank") { UseShellExecute = false }))
+                {
+                    try
+                    {
+                        IntPtr window = IntPtr.Zero;
+                        Wait(delegate { window = FindVisibleWindow(browser.Id, false); return window != IntPtr.Zero; }, 20000, "unsupported browser fixture window");
+                        ShowWindow(window, 3);
+                        SetForegroundWindow(window);
+                        Wait(delegate { return NativeMethods.GetForegroundRootWindow() == window; }, 5000, "foreground unsupported fixture");
+                        Assert.AreEqual(descriptor.Kind, ProcessIdentity.GetBrowser(window, true), "exact process identified without granting support");
+                        Assert.IsFalse(ProcessIdentity.IsSupportedBrowser(window, true), "quarantined process is not supported");
+                        ScanResult refused = UiaTabScanner.Scan(window, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
+                        Assert.AreEqual(ScanOutcome.ContractUnimplemented, refused.Outcome, "scanner refuses before traversal");
+                        Assert.AreEqual(0, refused.NodesVisited, "no UIA tree walked for unsupported browser");
+                        Assert.IsTrue(refused.SelectedHorizontalTab == null, "no selectable close target");
+                        File.WriteAllText(AppPaths.SettingsFile, "browsers=" + descriptor.Token + "\r\n");
+                        app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
+                        SetForegroundWindow(window);
+                        Stopwatch observe = Stopwatch.StartNew();
+                        while (observe.ElapsedMilliseconds < 3500)
+                        {
+                            Assert.IsFalse(app.HasExited, "packaged application remains healthy");
+                            Assert.AreEqual(IntPtr.Zero, FindVisibleWindow(app.Id, true), "no clickable overlay despite forced unsupported token");
+                            Thread.Sleep(50);
+                        }
+                        Assert.IsTrue(LastStartupLine() != null, "packaged application initialized");
+                        Console.WriteLine("PASS actual packaged EXE refuses unsupported " + descriptor.Token
+                            + "; exact detection only; no scan or overlay even with forced settings; OS=" + Environment.OSVersion.Version + "; pointerBytes=" + IntPtr.Size);
+                    }
+                    finally { Kill(app); if (!browser.HasExited) { browser.Kill(); browser.WaitForExit(5000); } }
+                }
+            }
+            finally
+            {
+                if (original == null) File.Delete(AppPaths.SettingsFile);
+                else File.WriteAllText(AppPaths.SettingsFile, original);
+            }
         }
 
         private static void Exercise(string bravePath, string candidatePath, string profile)

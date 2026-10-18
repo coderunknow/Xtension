@@ -14,14 +14,14 @@ Baseline: main `685975ec088ac28a722e004d6354c9fc1cbd6e63`, dev4 tag `15900f5`.
 | D5-05 | Medium | `RequestImmediateTick` changed UI-owned flags/64-bit timestamps on UIA callback thread | concurrent event delivery/read, including x86 torn timestamps | coalesced callback writes timing/state on UI thread only | Fixed, synthetic/real stress pending; events remain advisory |
 | D5-06 | Low | WinEvent hook range 3–22 includes unrelated system events; handler did not filter | menu/capture events ask for unnecessary scans | only foreground and minimize start/end trigger callback | Fixed by source; no measured CPU claim |
 | D5-07 | Medium | latency harness caught failed hover-hide and returned success; scan sampler returned silently on failed scan | acceptance could pass without advertised latency evidence | require every sample and hide prerequisite, fail rather than skip | Fixed, real execution pending |
-| D5-08 | Low | close completions excluded from metric Record although three lanes were documented | close lane silently absent from scan sample population | record every completed lane using same bounded buffer | Fixed, verification pending; percentiles still aggregate, not per-lane display |
+| D5-08 | Low | close completions excluded from metric Record although three lanes were documented | close lane silently absent from scan sample population | record every completed lane using same bounded buffer | Fixed, verification pending; per-lane display subsequently added in D5-14 |
 | D5-09 | Informational | dev4 capabilities points at dev3 audit, README says backup JSON while implementation is key=value | misleading operational documentation | update current docs, retain historical logs | In progress |
 
 ## Browser acceptance gate
 
-Brave retains baseline acceptance only until new run. Chrome/Edge candidate contracts are experimental pending real CI; they use exact executable identity, direct UIA Tab → TabItem, unique known SelectionItem selected state, runtime identity, bounded walk and existing horizontal geometry. Merely setting the catalog entry is not acceptance. Default remains Brave-only. Each actual browser must pass an isolated-profile packaged-EXE placement/close/refusal/hover/persistence test on both process architectures. Firefox is unsupported: Gecko UIA mapping is not implemented or verified. No placeholder provider.
+Brave and Chrome passed independent intermediate actual-EXE acceptance in both architectures (run `39108277770`, commit `5c97764`). They use exact executable identity, direct UIA Tab → TabItem, unique known SelectionItem selected state, runtime identity, bounded walk and existing horizontal geometry. Merely setting the catalog entry is not acceptance. Default remains Brave-only. Edge is disabled after the reproducible failure below. Each offered browser must pass an isolated-profile packaged-EXE placement/close/refusal/hover/persistence test on both process architectures. Firefox is unsupported: Gecko UIA mapping is not implemented or verified. No placeholder provider.
 
-## Verification
+## Verification at initial implementation (historical)
 
 Local tools/api-check.py and tools/verify-source.py pass (aids, not compilation). Actual scripts, x86/x64 builds, synthetic Windows harness, package provenance, performance and real-browser acceptance are pending Windows CI. Direct local dev4 asset download failed at disallowed release-assets host; no local hash is claimed. CI must verify it before execution. No tag or release created.
 
@@ -36,13 +36,15 @@ Local tools/api-check.py and tools/verify-source.py pass (aids, not compilation)
 
 ## Feature ranking and platform decision
 
-1. Opt-in Chrome/Edge: high value for existing workflow, moderate provider maintenance, no new runtime dependency; acceptance is actual isolated-profile EXE placement, exact single-tab close, disabled/modifier refusal and lifecycle on both architectures. In progress, not yet verified.
+1. Opt-in browser expansion: high value for existing workflow, moderate provider maintenance, no new runtime dependency; acceptance is actual isolated-profile EXE placement, exact single-tab close, disabled/modifier refusal and lifecycle on both architectures. Chrome independently passed; Edge failed and was withdrawn, not hidden behind an experimental label. One additional browser delivered, not the preferred two.
 2. Complete future-key backups: concrete gap in dev4 export, small bounded core implementation. Export includes unknown store keys except schema metadata; round-trip regression exercises export/parse/apply. Implemented, CI pending. Backups contain configuration, including user-authored unknown values; inspect before sharing.
 3. Global shortcuts: deferred, little repository evidence, input/focus conflicts and unnecessary hooks.
 4. New platform host: deferred, high scope/risk and no native GUI acceptance environment.
 
 macOS and Linux X11/Wayland remain unsupported. See [platform feasibility](PLATFORM_FEASIBILITY.md) for native accessibility/overlay/input boundaries, alternatives, relative costs and real-browser/permissions/packaging gates. No fake port or placeholder artifact is delivered.
 
+| ID | Severity | Evidence / root cause | Remediation and regression | Status / residual risk |
+| --- | --- | --- | --- | --- |
 | D5-14 | Low | `ScanMetrics` retained lane tags but exposed aggregate percentiles only; the old lane test checked enum distinctness rather than separation | expose retained sample counts/scan and queue p95 for each lane; regression uses deliberately different lane durations and checks the rendered report | Implemented, pending CI; counts are bounded-window samples, lifetime request/refusal/error counters remain aggregate |
 | D5-15 | Low | rejected-backup text promised current values although Parse deliberately starts from defaults; backup text promised no arbitrary content despite preserved unknown settings | bilingual text now states documented defaults and advises inspecting custom values before sharing; current docs describe INI/clamping rather than JSON/defaulting all numbers | Implemented; string consistency gates pending |
 
@@ -107,3 +109,34 @@ Run `39106587826` did **not** pass overall: Chrome and Edge in both architecture
 limit after signed-fixture verification (Chrome `155.0.8059.40`, Edge `154.0.4258.62`). No real acceptance result was
 retrievable from the synchronous native pipeline. Root cause remains unconfirmed; bounded file-backed fixture I/O
 and phase markers are the next diagnostic/remediation step, not a waiver. Brave and performance jobs succeeded.
+
+## Intermediate verification and scope resolution
+
+Run [39107697740](https://github.com/coderunknow/Xtension/actions/runs/39107697740), `1a1bfdf`: static and 100 core
+checks, MSBuild, both Framework builds, package/provenance, performance, both Brave and both Chrome actual-EXE
+acceptance jobs passed. **Both Edge acceptance jobs failed** after hover-close/application restart.
+Run [39108277770](https://github.com/coderunknow/Xtension/actions/runs/39108277770), `5c97764` reproduced this and
+recorded `DepthBudget`, 197 nodes, 160/181 ms, in both architectures. This is not a time-budget failure or evidence
+that increasing the budget is safe. The same run passed **19 synthetic Windows regressions per architecture**,
+including repeated TrayAppContext teardown and primary/secondary named-event delivery. These are not physical tray
+Shell/startup-registry acceptance. Chrome tested version `155.0.8059.40`; attempted Edge `154.0.4258.62`.
+
+**Resolution:** Edge is unsupported and explicitly scanner-disabled. Exact executable detection alone is retained;
+settings, imported tokens and hostile masks cannot enable it. Both CI matrices keep real Edge jobs, explicitly named
+**refusal**, requiring no UIA traversal, selected target or overlay from the actual packaged executable even with
+forced Edge settings. They are not successful Edge acceptance. A safe stable Edge chrome-root provider remains
+follow-up; depth/node/time caps, incomplete refusal and every close guard remain unchanged. Chrome carries real
+acceptance evidence, not an engine-based assumption. Firefox remains unsupported without a placeholder provider.
+
+Additional findings:
+
+| ID | Severity | Evidence / root cause | Reproduction / remediation | Status |
+| --- | --- | --- | --- | --- |
+| D5-16 | Medium, harness | synchronous native output can retain descendant handles and had no fixture-level deadline | synthetic parent exits 7 while descendant survives; file-backed bounded execution preserves output/code; stalled process refuses at deadline | Regression passed in run 39107697740. Earlier long-job cause remains unproven; do not conflate with a product fix. |
+| D5-17 | Medium, provider availability | Edge's deeper post-restart tree reaches unchanged depth cap | exact signed browser, both EXE architectures, no personal profile; attempted provider withdrawn and scanner disabled | Resolved by unsupported scope, not an implemented Edge solution; actual refusal test pending new CI. |
+
+Full 3-repeat resource evidence is uploaded in each performance job. A single full-report annotation was truncated at
+GitHub's additional 4096-character limit in run 39107697740; next iteration splits bounded chunks. No missing third
+repeat is reconstructed. A symmetric five-switch event-to-visible measurement is being added **after**, separately
+from, each foreground resource sample for both EXEs; failed/missing samples remain explicit, not zero. Final exact-head
+verification and downloaded release-byte results must supersede this intermediate chronology before publication.

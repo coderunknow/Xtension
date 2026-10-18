@@ -21,7 +21,8 @@ namespace Xtension.Tests
             NativeMethods.EnablePerMonitorDpiAwareness();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            if (args.Length == 4 && args[0] == "--brave") return BraveAcceptance.Run(args[1], args[2], args[3]);
+            if (args.Length == 4 && (args[0] == "--brave" || args[0] == "--refuse-browser"))
+                return BraveAcceptance.Run(args[1], args[2], args[3], args[0] == "--refuse-browser");
             // Resource measurement of a shipped EXE, used by the performance CI job. Never a functional test.
             if (args.Length >= 4 && args[0] == "--measure") return Measurement.Run(args);
             if (args.Length != 0 && args[0] == "--fixture")

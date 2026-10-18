@@ -9,9 +9,10 @@
   modifier rejection and cooldown. A held press is cancelled on placement/identity change. Hover never authorizes.
 - Settings ownership is centralized; disk/cache writes are transactional. Unknown keys survive rewrites and now also
   export/import round trips. Backups are key=value INI, not JSON. Inspect user-authored unknown values before sharing.
-- Brave remains the default browser. Chrome/Edge are explicit opt-in candidate providers with independent real-browser
-  acceptance gates; their support promotion is pending the dev5 audit's recorded results. Firefox is unsupported and
-  its unimplemented provider refuses. Merely sharing Chromium ancestry is not support.
+- Brave remains the default browser. Chrome is an independently tested opt-in addition. Edge is unsupported after
+  reproducible depth-budget acceptance failure; detection remains, its scanner is disabled, and explicit real-EXE
+  refusal tests replace any support claim. Firefox is unsupported/unimplemented. The preference for two additional
+  browsers was not safely achieved; sharing Chromium ancestry is not support.
 
 ## Verification boundary
 

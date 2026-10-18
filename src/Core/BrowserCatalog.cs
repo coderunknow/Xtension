@@ -89,11 +89,11 @@ namespace Xtension
                 DisplayName = "Brave", Support = BrowserSupport.Verified,
                 Contract = TabAccessContract.ChromiumSelectionItem, ScannerImplemented = true },
             new BrowserDescriptor { Kind = BrowserKind.Chrome, Token = "chrome", ExecutableName = "chrome.exe",
-                DisplayName = "Google Chrome", Support = BrowserSupport.Experimental,
+                DisplayName = "Google Chrome", Support = BrowserSupport.Verified,
                 Contract = TabAccessContract.ChromiumSelectionItem, ScannerImplemented = true },
             new BrowserDescriptor { Kind = BrowserKind.Edge, Token = "edge", ExecutableName = "msedge.exe",
-                DisplayName = "Microsoft Edge", Support = BrowserSupport.Experimental,
-                Contract = TabAccessContract.ChromiumSelectionItem, ScannerImplemented = true },
+                DisplayName = "Microsoft Edge", Support = BrowserSupport.Unsupported,
+                Contract = TabAccessContract.ChromiumSelectionItem, ScannerImplemented = false },
             new BrowserDescriptor { Kind = BrowserKind.Firefox, Token = "firefox", ExecutableName = "firefox.exe",
                 DisplayName = "Mozilla Firefox", Support = BrowserSupport.Unsupported,
                 Contract = TabAccessContract.GeckoSelectionItem, ScannerImplemented = false }
@@ -102,12 +102,12 @@ namespace Xtension
         /// <summary>
         /// Recorded real-browser acceptance for every browser this build declares as verified. Promotion to verified
         /// is impossible without an entry here, because the static check refuses the claim otherwise: sharing a
-        /// rendering engine with a verified browser is never accepted as evidence (the Chrome and Edge entries below
-        /// declare the same contract and are deliberately still unsupported, because no acceptance run has been made
-        /// for them).
+        /// rendering engine with a verified browser is never accepted as evidence. Edge declares the family contract but
+        /// remains unsupported after reproducible depth-cap failure; its descriptor explicitly disables the scanner.
         /// </summary>
         private static readonly string[] AcceptanceEvidence = new string[]
         {
+            "chrome@155.0.8059.40: CI 39108277770, commit 5c97764; isolated signed browser, packaged EXE x86 and x64; placement, exact single close, default-disabled, modifiers, 24-switch preservation, geometry, hover and restart passed",
             "brave@1.97.56: isolated profile, real window, overlay placed inside the confirmed selected tab on the CI runner (Windows Server 2022, x86 and x64); single close removed the confirmed tab"
         };
 
