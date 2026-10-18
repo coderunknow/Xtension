@@ -15,12 +15,33 @@ namespace Xtension.Tests
             scan.Window = Brave;
             scan.Dpi = 96;
             scan.Outcome = ScanOutcome.Ready;
-            TabInfo tab = new TabInfo { Name = "t", Bounds = Tab, SelectionKnown = true, Selected = true, IsHorizontalCandidate = true };
+            TabInfo tab = new TabInfo { RuntimeId = new int[] { 42, 7 }, Name = "t", Bounds = Tab, SelectionKnown = true, Selected = true, IsHorizontalCandidate = true };
             scan.Tabs.Add(tab);
             scan.SelectedHorizontalTab = tab;
             return scan;
         }
 
+
+        [Test]
+        public static void DifferentTabAtIdenticalGeometryRejects()
+        {
+            CloseRequest request = ValidRequest();
+            request.Scan.SelectedHorizontalTab.RuntimeId = new int[] { 42, 8 };
+            Assert.IsFalse(CloseGuard.Evaluate(request).Allowed, "same coordinates are not the intended tab");
+        }
+
+        [Test]
+        public static void MissingOrPartialIdentityRejects()
+        {
+            CloseRequest request = ValidRequest();
+            request.ExpectedTabRuntimeId = null;
+            Assert.IsFalse(CloseGuard.Evaluate(request).Allowed, "missing displayed identity refuses");
+            request = ValidRequest();
+            request.Scan.SelectedHorizontalTab.RuntimeId = new int[0];
+            Assert.IsFalse(CloseGuard.Evaluate(request).Allowed, "missing fresh identity refuses");
+            request.Scan.SelectedHorizontalTab.RuntimeId = new int[] { 42 };
+            Assert.IsFalse(CloseGuard.Evaluate(request).Allowed, "partial identity refuses");
+        }
 
         [Test]
         public static void ClickAreaFollowsConfiguredButtonSize()
@@ -78,6 +99,7 @@ namespace Xtension.Tests
                 Minimized = false,
                 BlockingModifierDown = false,
                 Scan = scan,
+                ExpectedTabRuntimeId = new int[] { 42, 7 },
                 Click = new Point(close.X + close.Width / 2, close.Y + close.Height / 2),
                 NowMs = 10000,
                 StartedMs = 9990,

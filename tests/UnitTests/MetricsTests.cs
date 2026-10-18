@@ -10,6 +10,22 @@ namespace Xtension.Tests
     internal static class MetricsTests
     {
         [Test]
+        public static void DifferentLaneDurationsAreNotMixedInDiagnostics()
+        {
+            ScanMetrics metrics = new ScanMetrics();
+            metrics.Record(ScanLane.Overlay, 1, 10, 11);
+            metrics.Record(ScanLane.Close, 2, 500, 502);
+            metrics.Record(ScanLane.Dashboard, 3, 900, 903);
+            ScanMetricsSnapshot totals = metrics.Snapshot();
+            Assert.AreEqual(3, totals.Lanes.Length, "three independent diagnostic lanes");
+            Assert.AreEqual(10.0, totals.Lanes[0].ScanP95Ms, "overlay excludes close/dashboard outliers");
+            Assert.AreEqual(500.0, totals.Lanes[1].ScanP95Ms, "close timing is really recorded");
+            Assert.AreEqual(3.0, totals.Lanes[2].QueueP95Ms, "dashboard queue stays separate");
+            foreach (LaneTimingSnapshot lane in totals.Lanes) Assert.AreEqual(1, lane.Samples, "one sample in each lane");
+            Assert.IsTrue(totals.Describe().Contains("Close samples=1 scanP95Ms=500.0"), "actual per-lane evidence is user-visible");
+        }
+
+        [Test]
         public static void EveryCounterIsCountedSeparately()
         {
             ScanMetrics metrics = new ScanMetrics();

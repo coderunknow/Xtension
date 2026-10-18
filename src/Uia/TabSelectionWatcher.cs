@@ -50,10 +50,10 @@ namespace Xtension
         {
             lock (_gate)
             {
-                if (_target == window) return;
+                if (_stopping || _target == window) return;
                 _target = window;
             }
-            _wake.Set();
+            try { _wake.Set(); } catch (ObjectDisposedException) { }
         }
 
         public EventWatchSnapshot Snapshot()
@@ -121,6 +121,9 @@ namespace Xtension
 
         private void Unregister()
         {
+            // Reset even when no root exists. Otherwise returning to the same HWND after a foreground-away
+            // unsubscription looks already registered and notifications never resume.
+            _registered = IntPtr.Zero;
             if (_registeredRoot == null)
             {
                 _registeredFlag = false;
@@ -167,7 +170,7 @@ namespace Xtension
         {
             if (_stopping) return;
             _stopping = true;
-            _wake.Set();
+            try { _wake.Set(); } catch (ObjectDisposedException) { }
             // Bounded wait. A provider stuck inside a registration call must not block shutdown; the thread is a
             // background thread, so the process can still exit.
             _thread.Join(AppInfo.EventWatchRegisterTimeoutMs);

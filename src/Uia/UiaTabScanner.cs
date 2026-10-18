@@ -53,7 +53,7 @@ namespace Xtension
         /// </summary>
         public static ScanResult Scan(IntPtr window, BrowserDescriptor descriptor, int sizeLogical, int insetLogical)
         {
-            if (descriptor == null || !BrowserCatalog.IsImplemented(descriptor.Contract))
+            if (descriptor == null || !descriptor.ScannerImplemented || !BrowserCatalog.IsImplemented(descriptor.Contract))
             {
                 ScanResult refused = ScanResult.Idle(window, ScanOutcome.ContractUnimplemented,
                     ScanMessageKey.BrowserUnimplemented);
@@ -96,7 +96,7 @@ namespace Xtension
                         result.ElapsedMs = total.ElapsedMilliseconds;
                         return result;
                     }
-                    Visit(root, 0, state);
+                    Visit(root, 0, null, state);
                 }
             }
             catch (ElementNotAvailableException ex)
@@ -122,7 +122,7 @@ namespace Xtension
             }
 
             // A final provider call can exceed the budget even if no further node is visited.
-            if (total.ElapsedMilliseconds >= AppInfo.ScanTimeBudgetMs) state.Incomplete = true;
+            if (total.ElapsedMilliseconds >= AppInfo.ScanTimeBudgetMs) MarkIncomplete(state, "TimeBudget");
             TabSelector.Apply(result, bounds, state.Incomplete, state.Nodes, total.ElapsedMilliseconds, sizeLogical, insetLogical);
             return result;
         }
@@ -140,12 +140,12 @@ namespace Xtension
             return cache;
         }
 
-        private static void Visit(AutomationElement element, int depth, WalkState state)
+        private static void Visit(AutomationElement element, int depth, ControlType parentType, WalkState state)
         {
             if (state.Incomplete) return;
             if (state.Nodes >= AppInfo.ScanMaxNodes || state.Watch.ElapsedMilliseconds > AppInfo.ScanTimeBudgetMs)
             {
-                state.Incomplete = true;
+                MarkIncomplete(state, state.Nodes >= AppInfo.ScanMaxNodes ? "NodeBudget" : "TimeBudget");
                 return;
             }
             state.Nodes++;
@@ -154,6 +154,10 @@ namespace Xtension
             ControlType type = element.Cached.ControlType;
             if (type == ControlType.TabItem)
             {
+                // Chromium exposes strip tabs as direct children of a UIA Tab (ARIA tablist). A TabItem elsewhere
+                // is not evidence of a browser tab. Do not guess if a provider changes this parent contract.
+                if (parentType != ControlType.Tab) MarkIncomplete(state, "TabItemParent="
+                    + (parentType == null ? "null" : parentType.ProgrammaticName) + ";depth=" + depth);
                 state.Result.Tabs.Add(ReadTab(element, depth, state));
                 return;
             }
@@ -163,7 +167,7 @@ namespace Xtension
             AutomationElement child = Walker.GetFirstChild(element, state.Cache);
             if (child != null && depth >= AppInfo.ScanMaxDepth)
             {
-                state.Incomplete = true;
+                MarkIncomplete(state, "DepthBudget");
                 return;
             }
             int siblings = 0;
@@ -171,15 +175,22 @@ namespace Xtension
             {
                 if (siblings >= AppInfo.ScanMaxSiblings)
                 {
-                    state.Incomplete = true;
+                    MarkIncomplete(state, "SiblingBudget");
                     return;
                 }
-                Visit(child, depth + 1, state);
+                Visit(child, depth + 1, type, state);
                 if (state.Incomplete) return;
                 siblings++;
                 state.Operation = "TreeWalker.GetNextSibling(cache)";
                 child = Walker.GetNextSibling(child, state.Cache);
             }
+        }
+
+        private static void MarkIncomplete(WalkState state, string reason)
+        {
+            state.Incomplete = true;
+            // Tokens and counts only. Never add provider Name, message, path or runtime identity to this metadata.
+            if (string.IsNullOrEmpty(state.Result.Error)) state.Result.Error = "Incomplete: " + reason;
         }
 
         /// <summary>Page content, text and buttons never contain the tab strip, so skipping them saves most of the work.</summary>
@@ -198,6 +209,9 @@ namespace Xtension
             TabInfo tab = new TabInfo();
             state.Operation = "Cached.Name";
             tab.Name = element.Cached.Name ?? string.Empty;
+            state.Operation = "GetRuntimeId";
+            tab.RuntimeId = element.GetRuntimeId();
+            if (tab.RuntimeId == null || tab.RuntimeId.Length == 0) MarkIncomplete(state, "MissingRuntimeId");
             state.Operation = "Cached.BoundingRectangle";
             tab.Bounds = ToRectangle(element.Cached.BoundingRectangle);
             state.Operation = "Cached.IsOffscreen";

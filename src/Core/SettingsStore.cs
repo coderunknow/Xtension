@@ -132,13 +132,7 @@ namespace Xtension
         /// <summary>Stores a value and writes the file immediately. Throws when the file cannot be written.</summary>
         public void SetString(string key, string value)
         {
-            if (string.IsNullOrEmpty(key)) throw new ArgumentException("A settings key is required.", "key");
-            lock (_gate)
-            {
-                EnsureLoadedLocked();
-                _values[key] = value == null ? string.Empty : value;
-                WriteAllLocked(_values);
-            }
+            SetMany(new string[] { key }, new string[] { value });
         }
 
         /// <summary>Stores several values and writes the file once. Throws when the file cannot be written.</summary>
@@ -149,12 +143,19 @@ namespace Xtension
             lock (_gate)
             {
                 EnsureLoadedLocked();
+                Dictionary<string, string> pending = new Dictionary<string, string>(_values, StringComparer.Ordinal);
                 for (int index = 0; index < keys.Length; index++)
                 {
                     if (string.IsNullOrEmpty(keys[index])) throw new ArgumentException("A settings key is required.", "keys");
-                    _values[keys[index]] = values[index] == null ? string.Empty : values[index];
+                    string key = keys[index];
+                    string value = values[index] == null ? string.Empty : values[index];
+                    if (key.Length > AppInfo.MaxSettingsKeyLength || key.IndexOfAny(new char[] { '=', '\r', '\n' }) >= 0
+                        || value.Length > AppInfo.MaxSettingsValueLength || value.IndexOfAny(new char[] { '\r', '\n' }) >= 0)
+                        throw new ArgumentException("Settings entries must fit the single-line format.", "keys");
+                    pending[key] = value;
                 }
-                WriteAllLocked(_values);
+                WriteAllLocked(pending);
+                _values = pending;
             }
         }
 
@@ -223,7 +224,10 @@ namespace Xtension
             try
             {
                 // Write-then-move so a crash never leaves a half-written settings file.
-                File.WriteAllText(temporary, text.ToString(), new UTF8Encoding(false));
+                byte[] bytes = new UTF8Encoding(false).GetBytes(text.ToString());
+                if (bytes.Length > AppInfo.MaxSettingsFileBytes)
+                    throw new InvalidOperationException("Settings exceed the supported file size.");
+                File.WriteAllBytes(temporary, bytes);
                 if (File.Exists(_path)) File.Replace(temporary, _path, null);
                 else File.Move(temporary, _path);
             }

@@ -1,19 +1,17 @@
 # Xtension
 
-Xtension is a small Windows tray app for Brave. It shows one custom **×** on the selected horizontal tab, so you do not close a tab by accident. The × moves when you change tabs. It appears only when Xtension can confirm which tab is active.
+Xtension is a small Windows tray app for supported browsers. It shows one custom **×** on the selected horizontal tab, so you do not close a tab by accident. The × moves when you change tabs. It appears only when Xtension can confirm which tab is active.
 
-> **Status: prerelease `v0.1.0-dev4`.** This candidate adds real-time scan triggering (a tab switch no longer waits
-> for the scan interval), performance profiles, appearance settings, validated settings backup and restore, a browser
-> provider boundary, richer diagnostics, a real multi-size application icon, and a whole-repository audit in
-> [`docs/DEV4_AUDIT.md`](docs/DEV4_AUDIT.md). Windows CI runs static checks, core tests, synthetic Windows tests,
-> real-Brave smoke with both EXEs, packaging checks and a published-baseline resource comparison. This is not a
-> guarantee across all Brave versions or desktop configurations. See [Verification](#verification) and the Releases
-> page for publication state.
+> **`v0.1.0-dev5` prerelease — Windows only.** This version strengthens exact-tab closing,
+> transactional settings and event recovery, adds forward-compatible backups, and adds independently tested opt-in
+> Chrome alongside Brave. Edge failed acceptance and is explicitly disabled. See [`docs/DEV5_AUDIT.md`](docs/DEV5_AUDIT.md) for actual acceptance state and remaining
+> limitations. Source and a build are not proof of GUI behavior. Publication is confirmed only on the
+> [Releases page](https://github.com/coderunknow/Xtension/releases).
 
 ## Requirements
 
 - Windows 10 or 11, x86 or x64.
-- Brave (Chromium) with horizontal tabs.
+- A supported browser with horizontal tabs; Brave is enabled by default. Chrome requires explicit opt-in; Edge and Firefox are unsupported.
 - .NET Framework 4.8 runtime.
 - No administrator rights. Xtension runs as your user.
 
@@ -43,7 +41,7 @@ Run it. A tray icon appears. Open the dashboard from the tray menu.
 
 ### Settings
 
-Every option is also available from the tray menu, and every change applies immediately to the running app.
+Open Settings from the tray or dashboard for the options below. Changes apply immediately and persist; the tray also offers enable/disable and startup actions.
 
 | Setting | Values | Default |
 | --- | --- | --- |
@@ -52,10 +50,10 @@ Every option is also available from the tray menu, and every change applies imme
 | × size | 18–40 logical pixels | 26 |
 | Right inset | 0–12 logical pixels from the tab's right edge | 3 |
 | Hover keep-time | 0–1000 ms after the pointer leaves the tab, so the pointer can travel from tab to button | 250 ms |
-| Scan interval | 300–2000 ms between UI Automation scans while Brave is in front | 500 ms |
+| Scan interval | 300–2000 ms between UI Automation scans while an enabled supported browser is in front | 500 ms |
 | Interface language | Tiếng Việt / English | Tiếng Việt |
 | Performance profile | `balanced`, `fast`, `low-resource`, `custom` | `balanced` |
-| Browsers to watch | Brave is supported; other listed browsers are disabled and are not claimed to work | Brave |
+| Browsers to watch | Brave; opt-in Chrome; Edge/Firefox unsupported | Brave |
 | × colour | `dark`, `red`, `blue`, `green` | `dark` |
 | × border | on / off | on |
 | × opacity | 30–100%, applied as uniform window alpha so the hit area never changes | 100% |
@@ -91,13 +89,11 @@ design, because they decide whether a close is authorised.
 
 ### Backup and restore
 
-Settings → Advanced → **Export** writes `Xtension-settings-<version>.json`: the schema version plus the settings the
-app understands. **Import** reads a file of at most 256 KiB, validates the schema and every value, applies what it
+Settings → Advanced → **Export** writes `xtension-settings.ini`: a bounded UTF-8 `key=value` document with schema metadata, known settings and unknown/future keys. It is not JSON. **Import** reads a file of at most 256 KiB, validates the schema and every value, applies what it
 accepts, reports by name what it rejected, clamped or preserved, and keeps unknown keys exactly as the normal settings
-file does. A backup carries no titles, URLs, log content or machine identity. If applying the values fails, the
-previous file is restored and the settings are reloaded, so a failed import cannot leave you with half a configuration.
+file does. Xtension collects no browsing data or logs for a backup. Unknown keys may contain user-authored custom values; inspect before sharing. A failed write leaves both the previous file and the store cache unchanged.
 
-Out-of-range or unreadable values are replaced by the documented default rather than being trusted. **Reset to defaults** restores every value above (the start-with-Windows entry is kept as it is, because it lives in the registry).
+Numeric values outside the range are clamped; unreadable values use documented defaults rather than being trusted. Rejected backup values use defaults too, and are reported. **Reset to defaults** restores every value above (the start-with-Windows entry is kept as it is, because it lives in the registry).
 
 Settings are stored at `%LOCALAPPDATA%\Xtension\settings.ini` as `key=value` lines. Keys this version does not know are preserved when the file is rewritten. Keyboard shortcuts in the windows: `Esc` closes them, and closing the dashboard keeps Xtension running in the notification area.
 
@@ -105,38 +101,43 @@ Native close buttons: if Brave's own "Always hide tab close button" setting is o
 
 ## Browsers
 
-Xtension scans a window only when the foreground process image name matches a browser whose tab-access contract is
-implemented **and** which you have enabled. Chrome, Edge and Firefox are listed with their executable names, but their
-contract is not implemented for this release: they are marked `unsupported`, their scan path refuses with an explicit
-reason (the dashboard says so) and nothing is inferred from the fact that some of them are Chromium-based. `brave.exe`
-is the only browser with acceptance evidence for this release.
+Xtension scans only an exact known foreground process image whose provider is implemented and which you enabled.
+Brave and Chrome have independently exercised contracts using direct UIA Tab → TabItem parentage, known unique
+SelectionItem selection, runtime identity and horizontal geometry. Chrome passed actual EXE acceptance in both
+architectures. **Edge is unsupported:** its attempted acceptance reproducibly exhausted the unchanged depth cap after
+restart, so its provider is disabled and cannot be opted into. CI verifies detection-only refusal against real Edge,
+not support. Firefox's Gecko provider remains unimplemented. See the dev5 audit for versions, failed runs and evidence.
+
+Existing settings and new defaults remain **Brave-only** (`browsers=brave`). Enable additional browsers in Settings;
+clearing a browser disables placement and closing there. Native browser close buttons are not hidden or changed by
+Xtension. The Brave appearance-settings shortcut is deliberately Brave-specific, not a Chrome/Edge settings control.
 
 ## How it stays safe
 
-- The × sends **Ctrl+W** only after a fresh UI Automation scan confirms that the click landed on the × of the one selected horizontal tab, and Brave is still the foreground window.
+- The × sends **Ctrl+W** only after a fresh UI Automation scan confirms that the click landed on the × of the one selected horizontal tab, the fresh runtime identity matches the displayed target, and the enabled browser is still foreground.
 - If the scan is incomplete, ambiguous, slow, or the window moved, the × is hidden and the click does nothing.
 - Ctrl+W is not sent while Shift, Alt, or Win is held, because Ctrl+Shift+W would close the whole window.
-- The × window never takes focus from Brave.
+- The × window never takes focus from the browser.
 - In `hover` mode the button appears only over the confirmed selected tab, so a stray click on the tab strip cannot reach it; clicking it still goes through the same fresh validation before any keystroke.
 - The × appears as soon as the pointer reaches the tab strip: arriving there asks for a scan immediately instead of
   waiting out the rest of the scan interval, and while the pointer is inside the strip `hover` mode scans at the
   documented minimum interval. Scanning stops again while the pointer is elsewhere, so responsiveness costs nothing
   when the pointer is not on a tab.
-- Scans run on a background thread. A hung Brave does not freeze the tray; stale confirmation hides the ×; after 5 seconds diagnostics reports a stall.
+- Scans run on background threads. A hung provider does not freeze the tray; stale confirmation hides the ×; after 5 seconds diagnostics reports a stall.
 - Logs contain no tab or window titles.
 
 ## Known limitations
 
 - Windows only. No macOS or Linux support.
-- Depends on Brave's accessibility tree. A Brave update that changes it causes the × to hide, not to guess.
+- Depends on each browser's accessibility tree. A browser update that changes it causes the × to hide, not to guess.
 - A tab switch in the short gap between confirmation and the keystroke cannot be prevented by any available API. This residual risk is recorded in `DESIGN_LOG.md`.
 - Vertical tabs and pinned or scrolled-out tabs are not treated as the target.
-- Chrome, Edge and Firefox are not supported by this release: they are listed for discovery, but their scan path
-  refuses rather than guessing, so the × stays hidden when they are in front.
-- The brief audio distortion reported when a notification appears has **not** been reproduced in this environment. The
-  notification is now Xtension's own non-activating, sound-free window instead of a Shell balloon, which removes the
-  mechanisms a balloon can use to disturb playback, but the effect on real audio playback is **not verified**. See
-  [`docs/DEV4_AUDIT.md`](docs/DEV4_AUDIT.md).
+- Firefox is unsupported. Brave/Chrome support is not a promise about every browser version; actual tested
+  versions and architecture results belong in the audit.
+- Physical multi-monitor/mixed-DPI behavior, native 32-bit Windows and genuinely hung providers still need relevant
+  environments; scaled-font and x86-process CI tests are not substitutes.
+- The owner reports the historical audio distortion is **not currently observed**. Its cause was not established;
+  no causal fix is claimed. Sound-free, non-activating notices are retained.
 
 ## Build and test
 
@@ -164,11 +165,11 @@ The version comes only from `VERSION`. Edit that file to change it.
 | Unit tests (pure core) | Run in CI. |
 | x86 and x64 builds | Run in CI. Verified in CI; release builds are produced by the tag workflow. |
 | Windows UIA fixture / scaled-font layout | Run in CI in both architectures; not real-browser or physical-monitor validation. Includes settings-window layout at 100/125/150/200% text scaling, the language toggle, overlay resize and a delivered Ctrl+W chord. |
-| Real Brave smoke | **Passed** with v1.97.56 for dev2 and dev3. The dev4 job additionally reads the shipped EXE's startup line as icon evidence, measures pointer-entry-to-visible latency (failing above 3000 ms) and records ten real-browser scan samples as p50/p95/max. |
-| Published dev3 vs dev4 candidate resources | One CI job measures both EXEs on the same runner and records startup time, idle CPU, working set, handles, UI Automation scan cost and the candidate's own statistics line in `performance.txt`. |
-| Application icon | Frames, sizes, bit depth and offsets are checked statically; the Windows harness loads the embedded resource and reports the frame count. Visual appearance at 100%/125%/150%/200% tray scaling is **not verified**. |
-| Audio crackle | **Not verified.** No audio device or Windows desktop was available; the notice-window change is a candidate fix, not a measured one. |
-| Full desktop acceptance | **Incomplete.** Physical DPI/multiple monitors, rapid-click race stress, tray/startup/graceful exit and unsupported arrangements still need manual coverage. |
+| Real browsers | Brave and opt-in Chrome passed full packaged-EXE acceptance on x86/x64 (`66da890`, CI `39108878064`); both real-Edge refusal jobs passed. Edge is disabled, not supported. Final PR/main/release gates retest exact source and bytes. |
+| Published dev4 vs candidate resources | Three 20-second observations per binary/state, alternating order on one runner; startup, CPU, working/private memory, handles, scan/queue counters. Raw evidence and limitations in the audit; no percentage speedup claim. |
+| Application icon | Frames/decoding are tested; human visual appearance at scaled tray sizes is **not verified**. |
+| Audio | Owner reports historical distortion is **not currently observed**; causal root cause remains unconfirmed. |
+| Full desktop acceptance | **Incomplete.** Physical mixed-DPI/multi-monitor, native x86 OS, true provider hangs, tray/startup/graceful exit and unsupported layouts remain limited. Rapid selection preservation and held-press cancellation have automated coverage, not exhaustive race certification. |
 
 Release notes state which items were verified for each release. The dev2 published EXEs were also downloaded, checksum-verified and exercised in [Windows CI](https://github.com/coderunknow/Xtension/actions/runs/38579364444), not just rebuilt from source.
 
@@ -184,6 +185,5 @@ MIT. See `LICENSE`.
 
 ### Diagnosing a hidden button
 
-Diagnostics distinguishes current hidden state from the last scan. For a scan error, the details include the failing operation, exception type, HRESULT and application method frames. Provider messages are intentionally omitted because they can contain private browsing data. Do not share tab-list screenshots without redacting titles. A stale/incomplete/ambiguous scan never authorizes Ctrl+W. See [dev4 audit](docs/DEV4_AUDIT.md) for this candidate's findings, fixes, exact blockers and remaining gaps,
-[dev3 audit](docs/DEV3_AUDIT.md) for the previous candidate, and [dev2 audit](docs/DEV2_AUDIT.md) for the release before
-that.
+Diagnostics distinguishes current hidden state from the last scan. For a scan error, the details include the failing operation, exception type, HRESULT and application method frames. Provider messages are intentionally omitted because they can contain private browsing data. Do not share tab-list screenshots without redacting titles. A stale/incomplete/ambiguous scan never authorizes Ctrl+W. See [dev5 audit](docs/DEV5_AUDIT.md) for this candidate's findings, fixes, exact blockers and remaining gaps,
+[dev4 audit](docs/DEV4_AUDIT.md) for the previous release, and the earlier per-release audits for history.

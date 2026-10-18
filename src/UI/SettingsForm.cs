@@ -571,11 +571,18 @@ namespace Xtension
                 dialog.Filter = Strings.Get(StringId.BackupFileFilter);
                 dialog.CheckFileExists = true;
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
-                _status.Text = _host.ImportSettings(dialog.FileName);
-                LoadFromHost();
-                UiLayout.ApplyLanguage(this);
-                RefreshStatus();
+                ImportBackupFile(dialog.FileName);
             }
+        }
+
+        /// <summary>Refresh values and language before showing the import result, so refresh cannot erase it.</summary>
+        internal void ImportBackupFile(string path)
+        {
+            if (_host == null) return;
+            string result = _host.ImportSettings(path);
+            LoadFromHost();
+            ApplyLanguage();
+            _status.Text = result;
         }
 
         private void ResetToDefaults()

@@ -16,7 +16,7 @@ namespace Xtension
         public int AppliedCount;
         /// <summary>Keys whose value was outside its documented range and was clamped to the bound.</summary>
         public List<string> ClampedKeys = new List<string>();
-        /// <summary>Keys whose value could not be parsed. The current value was kept; the file's value was not used.</summary>
+        /// <summary>Keys whose value could not be parsed. The documented default is used; the file's value was not used.</summary>
         public List<string> RejectedKeys = new List<string>();
         /// <summary>Keys this version does not know. They are preserved exactly as the normal settings path preserves them.</summary>
         public List<string> PreservedKeys = new List<string>();
@@ -36,7 +36,8 @@ namespace Xtension
     /// <summary>
     /// Export and import of the Xtension configuration. The format is the settings file itself plus a schema line, so
     /// restoring a backup needs no parser other than the one the application already uses, no dependency, and no
-    /// serialization of anything except settings: no log, no tab title, no URL and no machine information.
+    /// serialization of anything except settings. No browsing data is gathered, but preserved user-authored unknown
+    /// settings can themselves contain private values; backups must be inspected before sharing.
     ///
     /// Import is validate-then-write: nothing is written until the whole document has been parsed and bounded, every
     /// value goes through the same ranges as a normal load, and a failed write restores the previous file content.
@@ -65,6 +66,24 @@ namespace Xtension
                 text.Append(AppSettings.KnownKeys[index]).Append('=').Append(values[index]).Append("\r\n");
             }
             return text.ToString();
+        }
+
+        /// <summary>Includes future settings so exporting and restoring does not silently discard them.</summary>
+        public static string Export(AppSettings settings, SettingsStore store)
+        {
+            StringBuilder text = new StringBuilder(Export(settings));
+            if (store != null)
+            {
+                foreach (string key in store.Keys)
+                {
+                    if (Array.IndexOf(AppSettings.KnownKeys, key) >= 0 || IsMetadataKey(key)) continue;
+                    text.Append(key).Append('=').Append(store.GetRaw(key)).Append("\r\n");
+                }
+            }
+            string document = text.ToString();
+            if (Encoding.UTF8.GetByteCount(document) > AppInfo.MaxSettingsBackupBytes)
+                throw new InvalidOperationException("Backup exceeds the supported size.");
+            return document;
         }
 
         /// <summary>
@@ -313,7 +332,7 @@ namespace Xtension
 
         /// <summary>
         /// Writes a validated import into the store, preserving the values of keys this version does not know.
-        /// A failed write restores the previous file content, so the user never ends up with a partial configuration.
+        /// The store commits cache and file atomically; a failed write leaves both unchanged.
         /// </summary>
         public static bool ApplyToStore(SettingsStore store, BackupImportResult outcome, out string failure)
         {
@@ -321,19 +340,6 @@ namespace Xtension
             if (store == null || outcome == null || !outcome.Accepted || outcome.Settings == null)
             {
                 failure = "nothing to apply";
-                return false;
-            }
-
-            string previousText = null;
-            bool hadFile = false;
-            try
-            {
-                hadFile = File.Exists(store.FilePath);
-                if (hadFile) previousText = File.ReadAllText(store.FilePath, Encoding.UTF8);
-            }
-            catch (Exception ex)
-            {
-                failure = "the current settings file could not be read: " + ex.GetType().Name;
                 return false;
             }
 
@@ -368,24 +374,9 @@ namespace Xtension
             catch (Exception ex)
             {
                 failure = "the backup could not be written: " + ex.GetType().Name;
-                Restore(store, hadFile, previousText);
                 return false;
             }
         }
 
-        /// <summary>Puts the previous file content back and drops the cached values, so a failed import changes nothing.</summary>
-        private static void Restore(SettingsStore store, bool hadFile, string previousText)
-        {
-            try
-            {
-                if (hadFile && previousText != null) File.WriteAllText(store.FilePath, previousText, new UTF8Encoding(false));
-                else if (!hadFile && File.Exists(store.FilePath)) File.Delete(store.FilePath);
-                store.Reload();
-            }
-            catch (Exception ex)
-            {
-                AppLog.WarnThrottled("backup-restore", "The previous settings could not be restored: " + ex.GetType().Name);
-            }
-        }
     }
 }

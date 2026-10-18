@@ -89,8 +89,8 @@ namespace Xtension
                 DisplayName = "Brave", Support = BrowserSupport.Verified,
                 Contract = TabAccessContract.ChromiumSelectionItem, ScannerImplemented = true },
             new BrowserDescriptor { Kind = BrowserKind.Chrome, Token = "chrome", ExecutableName = "chrome.exe",
-                DisplayName = "Google Chrome", Support = BrowserSupport.Unsupported,
-                Contract = TabAccessContract.ChromiumSelectionItem, ScannerImplemented = false },
+                DisplayName = "Google Chrome", Support = BrowserSupport.Verified,
+                Contract = TabAccessContract.ChromiumSelectionItem, ScannerImplemented = true },
             new BrowserDescriptor { Kind = BrowserKind.Edge, Token = "edge", ExecutableName = "msedge.exe",
                 DisplayName = "Microsoft Edge", Support = BrowserSupport.Unsupported,
                 Contract = TabAccessContract.ChromiumSelectionItem, ScannerImplemented = false },
@@ -102,13 +102,13 @@ namespace Xtension
         /// <summary>
         /// Recorded real-browser acceptance for every browser this build declares as verified. Promotion to verified
         /// is impossible without an entry here, because the static check refuses the claim otherwise: sharing a
-        /// rendering engine with a verified browser is never accepted as evidence (the Chrome and Edge entries below
-        /// declare the same contract and are deliberately still unsupported, because no acceptance run has been made
-        /// for them).
+        /// rendering engine with a verified browser is never accepted as evidence. Edge declares the family contract but
+        /// remains unsupported after reproducible depth-cap failure; its descriptor explicitly disables the scanner.
         /// </summary>
         private static readonly string[] AcceptanceEvidence = new string[]
         {
-            "brave@1.97.56: isolated profile, real window, overlay placed inside the confirmed selected tab on the CI runner (Windows Server 2022, x86 and x64); single close removed the confirmed tab"
+            "chrome@155.0.8059.40: CI 39108878064, commit 66da890; isolated signed browser, packaged EXE x86 and x64; placement, exact single close, default-disabled, modifiers, 24-switch preservation, geometry, hover and restart passed",
+            "brave@155.1.97.56: CI 39108878064, commit 66da890; isolated official pinned browser, packaged EXE x86 and x64 on OS 10.0.26100.0; placement, exact single close, modifiers, 24-switch preservation, geometry, hover and restart passed"
         };
 
         /// <summary>Every browser this build knows about, in a stable order.</summary>

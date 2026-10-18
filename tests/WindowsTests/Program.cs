@@ -21,7 +21,8 @@ namespace Xtension.Tests
             NativeMethods.EnablePerMonitorDpiAwareness();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            if (args.Length == 4 && args[0] == "--brave") return BraveAcceptance.Run(args[1], args[2], args[3]);
+            if (args.Length == 4 && (args[0] == "--brave" || args[0] == "--refuse-browser"))
+                return BraveAcceptance.Run(args[1], args[2], args[3], args[0] == "--refuse-browser");
             // Resource measurement of a shipped EXE, used by the performance CI job. Never a functional test.
             if (args.Length >= 4 && args[0] == "--measure") return Measurement.Run(args);
             if (args.Length != 0 && args[0] == "--fixture")
@@ -40,6 +41,136 @@ namespace Xtension.Tests
                 return 0;
             }
             return TestRunner.Run();
+        }
+
+        [Test]
+        public static void TrayContextShutsDownOwnedResourcesWithoutRegistryWrites()
+        {
+            string directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "Xtension-lifecycle-" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(directory);
+            try
+            {
+                for (int cycle = 0; cycle < 2; cycle++)
+                {
+                    SettingsStore store = new SettingsStore(System.IO.Path.Combine(directory, "settings.ini"));
+                    using (TrayAppContext context = new TrayAppContext(store, AppSettings.Defaults()))
+                    {
+                        System.Reflection.FieldInfo overlayField = typeof(TrayAppContext).GetField("_overlay", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        System.Reflection.FieldInfo invokerField = typeof(TrayAppContext).GetField("_invoker", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        CloseButtonOverlay overlay = (CloseButtonOverlay)overlayField.GetValue(context);
+                        Control invoker = (Control)invokerField.GetValue(context);
+                        Assert.IsFalse(overlay.IsDisposed, "constructed context owns live overlay");
+                        context.ExitThread();
+                        Assert.IsTrue(overlay.IsDisposed, "exit disposes overlay");
+                        Assert.IsTrue(invoker.IsDisposed, "exit disposes marshal control");
+                    }
+                }
+            }
+            finally { System.IO.Directory.Delete(directory, true); }
+        }
+
+        [Test]
+        public static void SingleInstanceRefusesDuplicateAndDeliversDashboardSignal()
+        {
+            using (SingleInstance primary = SingleInstance.Acquire())
+            using (AutoResetEvent delivered = new AutoResetEvent(false))
+            {
+                Assert.IsFalse(primary.Unavailable || primary.IsSecondary, "first instance holds exclusion");
+                using (ShowDashboardListener listener = new ShowDashboardListener(delegate { delivered.Set(); }))
+                using (SingleInstance secondary = SingleInstance.Acquire())
+                {
+                    Assert.IsTrue(secondary.IsSecondary && !secondary.Unavailable, "duplicate cannot create another active application");
+                    Assert.IsTrue(secondary.SignalExisting(), "secondary can signal primary");
+                    Assert.IsTrue(delivered.WaitOne(5000), "primary receives dashboard signal");
+                }
+            }
+        }
+
+        [Test]
+        public static void SelectionWatcherResubscribesAfterReturningToSameWindow()
+        {
+            using (Form fixture = new Form())
+            using (TabControl tabs = new TabControl())
+            {
+                tabs.TabPages.Add("Synthetic");
+                fixture.Controls.Add(tabs);
+                fixture.Show();
+                using (TabSelectionWatcher watcher = new TabSelectionWatcher(delegate { }))
+                {
+                    watcher.SetTarget(fixture.Handle);
+                    PumpUntil(delegate { return watcher.Snapshot().Registered; }, "first subscription");
+                    long first = watcher.Snapshot().Registrations;
+                    watcher.SetTarget(IntPtr.Zero);
+                    PumpUntil(delegate { return !watcher.Snapshot().Registered; }, "unsubscription");
+                    watcher.SetTarget(fixture.Handle);
+                    PumpUntil(delegate { return watcher.Snapshot().Registered && watcher.Snapshot().Registrations > first; }, "return to same HWND must resubscribe");
+                }
+            }
+        }
+
+        private static void PumpUntil(Func<bool> condition, string reason)
+        {
+            Stopwatch watch = Stopwatch.StartNew();
+            while (watch.ElapsedMilliseconds < 10000)
+            {
+                Application.DoEvents();
+                if (condition()) return;
+                Thread.Sleep(20);
+            }
+            Assert.IsTrue(false, reason);
+        }
+
+        [Test]
+        public static void OverlayPressCannotSurviveTargetOrGeometryChange()
+        {
+            using (CloseButtonOverlay overlay = new CloseButtonOverlay())
+            {
+                string failure;
+                overlay.ShowAt(new Rectangle(100, 100, 26, 26), out failure);
+                int clicks = 0;
+                overlay.Clicked += delegate { clicks++; };
+                System.Reflection.MethodInfo down = typeof(CloseButtonOverlay).GetMethod("OnMouseDown", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                System.Reflection.MethodInfo up = typeof(CloseButtonOverlay).GetMethod("OnMouseUp", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                MouseEventArgs mouse = new MouseEventArgs(MouseButtons.Left, 1, 13, 13, 0);
+                down.Invoke(overlay, new object[] { mouse });
+                overlay.CancelPendingClick();
+                up.Invoke(overlay, new object[] { mouse });
+                Assert.AreEqual(0, clicks, "identity change cancels a held press even at identical bounds");
+                down.Invoke(overlay, new object[] { mouse });
+                overlay.ShowAt(new Rectangle(101, 100, 26, 26), out failure);
+                up.Invoke(overlay, new object[] { mouse });
+                Assert.AreEqual(0, clicks, "move cancels a held press");
+                down.Invoke(overlay, new object[] { mouse });
+                up.Invoke(overlay, new object[] { mouse });
+                Assert.AreEqual(1, clicks, "unchanged target still reports a normal click");
+            }
+        }
+
+        [Test]
+        public static void ControllerSettingsSnapshotMatchesAppliedValuesAndIsIsolated()
+        {
+            using (Control invoker = new Control())
+            using (CloseButtonOverlay overlay = new CloseButtonOverlay())
+            {
+                invoker.CreateControl();
+                AppSettings initial = AppSettings.Defaults();
+                using (ActiveTabController controller = new ActiveTabController(overlay, invoker, initial))
+                {
+                    initial.ButtonSizeLogical = 19;
+                    Assert.AreEqual(AppInfo.DefaultButtonSizeLogical, controller.Settings.ButtonSizeLogical, "constructor copies ownership");
+                    AppSettings changed = AppSettings.Defaults();
+                    changed.Language = AppLanguage.English;
+                    changed.ButtonColor = OverlayColor.Red;
+                    changed.ButtonBorder = false;
+                    changed.ButtonOpacityPercent = 55;
+                    changed.OverlayEnabled = false;
+                    controller.ApplySettings(changed);
+                    Assert.IsTrue(controller.GetSnapshot().Settings.Matches(changed), "all applied fields reach diagnostics");
+                    AppSettings exposed = controller.Settings;
+                    exposed.ButtonSizeLogical = 18;
+                    Assert.AreEqual(AppInfo.DefaultButtonSizeLogical, controller.Settings.ButtonSizeLogical, "getter cannot mutate owner");
+                }
+            }
         }
 
         [Test]
@@ -785,6 +916,10 @@ namespace Xtension.Tests
                         string exported = host.ExportSettings(file);
                         Assert.IsTrue(exported == "exported", "the host reports a successful export: " + exported);
                         Assert.IsTrue(System.IO.File.Exists(file), "the backup file exists");
+                        form.ImportBackupFile(file);
+                        System.Reflection.FieldInfo statusField = typeof(SettingsForm).GetField("_status", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        Label status = (Label)statusField.GetValue(form);
+                        Assert.IsTrue(status.Text.StartsWith("imported ", StringComparison.Ordinal), "import outcome survives values/language refresh");
 
                         AppSettings other = AppSettings.Defaults();
                         other.ScanIntervalMs = AppInfo.MinScanIntervalMs;

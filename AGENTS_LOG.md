@@ -500,3 +500,57 @@ deadline) was refused, and the deadline logic is untouched.
   connect (`gh release download v0.1.0-dev4` and `gh run download 38922772057 -n Xtension-win-x64`). The equivalent
   verification therefore rests on the workflow's own step, which runs inside GitHub and succeeded; nothing was
   substituted for it and no hash in this log was computed locally.
+
+## 2026-10-18 — dev5 reconnaissance
+
+Read AGENTS.md first; fetched origin/tags, checked status, branches, PR history, releases/assets and CI history with git/gh. Baseline and owner decisions appended to DESIGN_LOG entry 019. No remote changes yet. Local asset download failed (release-assets host EOF); no local binary hash or Windows runtime result claimed. Source audit in progress; runtime identity is absent from the existing close gate despite the exact-target requirement. Required pre-implementation documents and implementation/test/workflow paths are being reviewed, without treating historic claims as new acceptance.
+
+## 2026-10-18 — first dev5 implementation, CI pending
+
+Implemented audit D5-01–08 and regression tests; changed VERSION only for version generation. Expanded browser harness to explicit browser selection, signed hosted Chrome/Edge fixtures and disabled-by-default refusal; added six architecture/browser CI combinations and switched baseline to dev4. Python API/static aids pass. No actual PowerShell/C# execution locally, no performance or browser result yet. Removed importer rollback rewrite: the now transactional atomic store leaves old cache/file unchanged on failure instead of rewriting good bytes non-atomically. Candidate release gates remain pending.
+
+## 2026-10-18 — CI round one and additional regressions
+
+Run 39106016202 failed core suite (97 passed, 1 failed): BackupTests still considered Chrome unsupported. Invalid provider fixture changed to Firefox without removing assertions. Added held-press cancellation on identity/placement change, settings backup future-key round trip, three-repeat alternating performance protocol and independent dev4 hash/version/source check. Added 24-switch real-browser stress preserving the full tab set. Windows GUI/build evidence remains pending; no browser is promoted to verified yet.
+
+## 2026-10-18 — audit continuation
+
+Added D5-10–13, held-press and UIA re-subscription coverage, fixed import result visibility, documented platform feasibility with primary protocol sources, and strengthened release main-CI/release-byte browser gates. Run 39106247860 has actual core/static/MSBuild/x86/x64/package success and both Brave acceptance jobs green at this point; Chrome/Edge/performance still running, so no whole-run pass claimed. Source aids pass after new changes; fresh exact-head CI is required.
+
+## 2026-10-18 — additional diagnostics/documentation and CI observability
+
+Run 39106247860 was cancelled by the next push before resource/new-browser completion, not passed. Run 39106587826 has green static/core/build/MSBuild/package/Brave results but new browsers and performance still running. No new-browser success claimed. Direct job-log download is also blocked at results-receiver.actions host (EOF).
+
+Completed actual per-lane retained-sample diagnostics (the old “lanes kept apart” test checked only enum inequality); added deliberately distinct durations/queues and rendered-summary assertions. Corrected bilingual rejected-import wording (defaults, not current values) and backup privacy description. Updated current docs without altering historical audit/log entries. Tightened real-browser sample p95 to nearest-rank.
+
+Long new-browser steps prompted a harness I/O investigation: synchronous native pipelines can wait on browser descendants inheriting stdout after the harness exits. This is a plausible harness cause, NOT a reproduced product defect; no live logs are available here. Added bounded fixture execution using shared output files instead of inherited pipes, retained exit/deadline failures and sanitized evidence filtering. Signature verification remains required, now in a bounded job; phase markers will distinguish signature, harness and cleanup delays in the next run. Raw temporary stdout/stderr stay in ignored dist and are not uploaded. No acceptance assertion is removed.
+
+## 2026-10-18 — scope consistency and intermediate measurements
+
+Minimal AGENTS wording generalizes Brave to enabled supported browser on the owner's multi-browser mandate; strengthens exact displayed identity and keeps every original gate. Intermediate performance job 117613979110 succeeded on 802b203 and pinned dev4 source/version/hash. First-repetition numbers are in the audit; additional samples are in the artifact but not all annotations survived GitHub's per-step cap. Added a separate complete-summary annotation step for the next run. No percentage or universal improvement claim. Current Chrome/Edge steps remain outstanding; no release decision yet.
+
+## 2026-10-18 — CI round two outcome (not a pass)
+
+Run 39106587826 on 802b203 completed cancelled: all four new-browser jobs exceeded their unchanged 15-minute job deadlines. Fixture annotations show signature validation completed and exact versions/hashes were recorded (Chrome 155.0.8059.40, Edge 154.0.4258.62); no acceptance output escaped the native harness pipeline. Root cause is not yet proven. Static/core (99 passed), MSBuild, both builds (17 Windows regressions each), packaging, repeated performance and Brave x86/x64 passed. The new bounded file-backed fixture transport is now submitted to reveal actual harness results instead of treating the timeout as flakiness or increasing deadlines. Publication remains blocked.
+
+## 2026-10-18 — bounded transport results, no waiver
+
+Run 39107697740 on 1a1bfdf finished failure only in Edge x86/x64. All four Brave/Chrome actual packaged-browser jobs passed, including default opt-out, 24 rapid switches with tab preservation, exact one-tab close/refusal/geometry/hover/persistence. The file-backed runner's regression also passed; this demonstrates it works and exposes results, not proof of the earlier pipe-hang cause. Edge's post-restart scan is incomplete (six tabs/197 nodes in 168/338 ms), not close-authorizing. Added first-cause metadata with enum/tokens/counts only to diagnose the unchanged contract gates. Static/core: 100 passed. Other build/package/performance jobs passed. Full performance annotation hit an additional 4096-character GitHub limit; split it into bounded notices next, do not infer missing third-repeat numbers.
+
+## 2026-10-18 — Edge withheld, Chrome independently accepted
+
+Diagnostic run 39108277770 / 5c97764 failed only in Edge acceptance, both architectures: explicit DepthBudget at 197 nodes (160/181 ms). All other jobs passed, including Chrome/Brave packaged EXEs, 100 core and 19 synthetic Windows tests. Caps and incomplete refusal are unchanged. In line with the owner's no-fake-support rule, removed Edge from offered/scanner-implemented providers, retained exact detection and its failed evidence, and added explicitly named real-Edge refusal tests including forced settings. This is one additional supported browser, not the preferred two; no waiver of failed Edge acceptance is claimed. New gates must verify this scope resolution before merge. Chrome evidence names the actual independent run/version, not shared engine ancestry.
+
+Added symmetric five-tab-switch reaction measurements for dev4 and candidate after each foreground resource window; startup/resource sampling remains separate. New measurements are pending CI, not invented data. Bounded annotation chunks address the observed 4096-character truncation. No tag/release/merge has occurred.
+
+## 2026-10-18 — new quarantine-test fixture correction
+
+Run 39108816115 / 435f751 failed core at 100 passed / 1 failed before downstream jobs ran. The new backup/quarantine test omitted mandatory schema metadata, so Parse correctly rejected it and its Settings was null; this was a test setup defect, not a backup acceptance bypass. Supply the valid schema/product and assert Accepted before reading Settings; product rejection semantics are unchanged. XML wording is aligned with the already-corrected defaults/privacy strings. No earlier failed/cancelled run is green.
+
+## 2026-10-18 — complete candidate CI observed
+
+Run 39108878064 succeeded at exact 66da890620b87d3d3799488aba3c5ce95637334f, all 12 jobs. Actual tests: 101 core, 19 synthetic Windows per architecture, both builds/MSBuild/package/provenance/negative tests, four complete Brave/Chrome packaged-EXE acceptance and two explicitly Edge refusal jobs, plus performance and fixture-transport regression. Three bounded annotations returned all 12 resource observations and six reaction summaries (30/30 timed switches); the audit contains the actual values. Candidate foreground median CPU/scan p95 was higher, not a speedup; no statistical inference or arbitrary pass threshold is claimed. Updated recorded catalog evidence to actual dev5 versions/run rather than the old server-version wording. Only evidence wording/docs now need final exact-head CI, then ordinary merge/main CI/tag/release gates. No publication yet. Physical gaps and one-additional-browser scope are explicit.
+
+## 2026-10-18 — verification wording correction and explicit core arch tests
+
+Corrected an audit wording error before finalization: prior 101-core-test runs were default AnyCPU executed under PowerShell 7/5.1, not explicitly targeted x86/x64. Synthetic Windows regressions and actual browser candidate EXEs DID target both architectures as recorded. Added explicit arch parameter/platform/output to test.ps1, both core arches under both CI hosts, and release matrix arch. No product behavior changed. Audit marks this extra coverage pending; the next run must prove it. Updated findings from historical “pending” to the actual 66da890 outcomes, retaining genuinely unverified stress/physical gaps. README now describes the dev5 prerelease without promising publication before the tag exists.

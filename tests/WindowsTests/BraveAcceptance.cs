@@ -12,6 +12,7 @@ namespace Xtension.Tests
     // Isolated runner profile only. No personal browser, no browsing titles/URLs in output.
     internal static class BraveAcceptance
     {
+        private static BrowserKind _kind;
         private delegate bool WindowCallback(IntPtr hwnd, IntPtr state);
         [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr state);
         [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
@@ -20,13 +21,22 @@ namespace Xtension.Tests
         [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
         [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
 
-        public static int Run(string bravePath, string candidatePath, string profile)
+        public static int Run(string bravePath, string candidatePath, string profile, bool requireRefusal = false)
         {
+            BrowserDescriptor descriptor = BrowserCatalog.ForExecutable(Path.GetFileName(bravePath));
+            if (descriptor == null) return 2;
+            _kind = descriptor.Kind;
+            Console.WriteLine("PASS browser fixture token=" + descriptor.Token);
             Exception failure = null;
             Thread worker = new Thread(delegate()
             {
                 try
                 {
+                    if (requireRefusal)
+                    {
+                        ExerciseRefusal(bravePath, candidatePath, profile);
+                        return;
+                    }
                     Exercise(bravePath, candidatePath, profile);
                     // Second phase: the same shipped binary, started from a settings file that selects the new
                     // hover mode and a non-default button size. It runs after the first app process is gone, because
@@ -44,14 +54,65 @@ namespace Xtension.Tests
                 Console.WriteLine("FAIL Brave acceptance: " + failure.GetType().Name + ": " + failure.Message);
                 return 1;
             }
-            Console.WriteLine("PASS isolated real-Brave smoke; not a full desktop/DPI acceptance matrix.");
+            Console.WriteLine(requireRefusal ? "PASS unsupported browser refusal only; NOT support acceptance."
+                : "PASS isolated real-browser smoke; not a full desktop/DPI acceptance matrix.");
             return 0;
+        }
+
+        private static void ExerciseRefusal(string browserPath, string candidatePath, string profile)
+        {
+            BrowserDescriptor descriptor = BrowserCatalog.ForExecutable(Path.GetFileName(browserPath));
+            Assert.IsTrue(descriptor != null && !descriptor.ScannerImplemented
+                && descriptor.Support == BrowserSupport.Unsupported, "explicit quarantine, not an acceptance shortcut");
+            AppPaths.EnsureDirectory();
+            string original = File.Exists(AppPaths.SettingsFile) ? File.ReadAllText(AppPaths.SettingsFile) : null;
+            Process app = null;
+            try
+            {
+                using (Process browser = Process.Start(new ProcessStartInfo(browserPath,
+                    "--user-data-dir=\"" + profile + "\" --no-first-run --no-default-browser-check --disable-background-networking --new-window about:blank about:blank") { UseShellExecute = false }))
+                {
+                    try
+                    {
+                        IntPtr window = IntPtr.Zero;
+                        Wait(delegate { window = FindVisibleWindow(browser.Id, false); return window != IntPtr.Zero; }, 20000, "unsupported browser fixture window");
+                        ShowWindow(window, 3);
+                        SetForegroundWindow(window);
+                        Wait(delegate { return NativeMethods.GetForegroundRootWindow() == window; }, 5000, "foreground unsupported fixture");
+                        Assert.AreEqual(descriptor.Kind, ProcessIdentity.GetBrowser(window, true), "exact process identified without granting support");
+                        Assert.IsFalse(ProcessIdentity.IsSupportedBrowser(window, true), "quarantined process is not supported");
+                        ScanResult refused = UiaTabScanner.Scan(window, AppInfo.DefaultButtonSizeLogical, AppInfo.DefaultButtonInsetLogical);
+                        Assert.AreEqual(ScanOutcome.ContractUnimplemented, refused.Outcome, "scanner refuses before traversal");
+                        Assert.AreEqual(0, refused.NodesVisited, "no UIA tree walked for unsupported browser");
+                        Assert.IsTrue(refused.SelectedHorizontalTab == null, "no selectable close target");
+                        File.WriteAllText(AppPaths.SettingsFile, "browsers=" + descriptor.Token + "\r\n");
+                        app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
+                        SetForegroundWindow(window);
+                        Stopwatch observe = Stopwatch.StartNew();
+                        while (observe.ElapsedMilliseconds < 3500)
+                        {
+                            Assert.IsFalse(app.HasExited, "packaged application remains healthy");
+                            Assert.AreEqual(IntPtr.Zero, FindVisibleWindow(app.Id, true), "no clickable overlay despite forced unsupported token");
+                            Thread.Sleep(50);
+                        }
+                        Assert.IsTrue(LastStartupLine() != null, "packaged application initialized");
+                        Console.WriteLine("PASS actual packaged EXE refuses unsupported " + descriptor.Token
+                            + "; exact detection only; no scan or overlay even with forced settings; OS=" + Environment.OSVersion.Version + "; pointerBytes=" + IntPtr.Size);
+                    }
+                    finally { Kill(app); if (!browser.HasExited) { browser.Kill(); browser.WaitForExit(5000); } }
+                }
+            }
+            finally
+            {
+                if (original == null) File.Delete(AppPaths.SettingsFile);
+                else File.WriteAllText(AppPaths.SettingsFile, original);
+            }
         }
 
         private static void Exercise(string bravePath, string candidatePath, string profile)
         {
             string version = FileVersionInfo.GetVersionInfo(bravePath).ProductVersion;
-            Console.WriteLine("Brave binary version=" + version + "; OS=" + Environment.OSVersion.Version + "; test pointer bytes=" + IntPtr.Size);
+            Console.WriteLine("Browser binary version=" + version + "; OS=" + Environment.OSVersion.Version + "; test pointer bytes=" + IntPtr.Size);
             using (Process browser = Process.Start(new ProcessStartInfo(bravePath,
                 "--user-data-dir=\"" + profile + "\" --no-first-run --no-default-browser-check --disable-background-networking --disable-component-update --disable-sync --new-window about:blank about:blank about:blank") { UseShellExecute = false }))
             {
@@ -75,6 +136,19 @@ namespace Xtension.Tests
                         throw new AssertionFailure("Initial Brave scan: " + (initial == null ? "no result" : initial.Outcome + "; " + initial.Error + "; nodes=" + initial.NodesVisited + "; tabs=" + initial.Tabs.Count));
                     }
                     Console.WriteLine("PASS Brave already running: selected horizontal tab confirmed; nodes=" + initial.NodesVisited + "; dpi=" + initial.Dpi);
+                    AppPaths.EnsureDirectory();
+                    if (_kind != BrowserKind.Brave)
+                    {
+                        File.WriteAllText(AppPaths.SettingsFile, "browsers=brave\r\n");
+                        app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
+                        SetForegroundWindow(brave);
+                        Thread.Sleep(2500);
+                        Assert.IsTrue(FindVisibleWindow(app.Id, true) == IntPtr.Zero, "disabled browser has no overlay");
+                        Kill(app);
+                        Thread.Sleep(500);
+                        Console.WriteLine("PASS Brave-only settings refuse the new browser before opt in");
+                    }
+                    File.WriteAllText(AppPaths.SettingsFile, "browsers=" + BrowserCatalog.Token(_kind) + "\r\n");
                     app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
                     SetForegroundWindow(brave);
                     IntPtr overlay = IntPtr.Zero;
@@ -90,7 +164,7 @@ namespace Xtension.Tests
                     // The expected token comes from the product's own formatter, so the assertion cannot pass on a
                     // typo in the log line and cannot break when the line is reworded. It fails if the shipped
                     // default ever stops being the verified browser.
-                    string expectedBrowsers = "browsers " + BrowserCatalog.MaskTokenList(BrowserCatalog.Mask(BrowserKind.Brave));
+                    string expectedBrowsers = "browsers " + BrowserCatalog.MaskTokenList(BrowserCatalog.Mask(_kind));
                     Assert.IsTrue(started.Contains(expectedBrowsers),
                         "the shipped EXE starts with the verified browser enabled (expected '" + expectedBrowsers + "'): " + started);
                     Console.WriteLine("INFO shipped EXE icon and tray source: " + started);
@@ -109,6 +183,20 @@ namespace Xtension.Tests
                         }, 7000, "overlay did not follow Ctrl+Tab");
                     }
                     Console.WriteLine("PASS three tab switches followed by actual overlay");
+
+                    string beforeStressSelected;
+                    List<string> beforeStress = CaptureTabIds(brave, out beforeStressSelected);
+                    for (int index = 0; index < 24; index++)
+                    {
+                        Key(0x11, false); Key(0x09, false); Key(0x09, true); Key(0x11, true);
+                        Thread.Sleep(25);
+                    }
+                    WaitForOverlay(app.Id, brave, 7000);
+                    string afterStressSelected;
+                    List<string> afterStress = CaptureTabIds(brave, out afterStressSelected);
+                    Assert.AreEqual(beforeStress.Count, afterStress.Count, "rapid switching never closes a tab");
+                    foreach (string id in beforeStress) Assert.IsTrue(afterStress.Contains(id), "every original tab survives switching");
+                    Console.WriteLine("PASS 24 rapid selection switches preserve every tab and converge to validated overlay");
 
                     // A second browser window must not inherit the first window's confirmation.
                     Key(0x11, false); Key(0x4E, false); Key(0x4E, true); Key(0x11, true);
@@ -309,7 +397,7 @@ namespace Xtension.Tests
                 }
 
                 File.WriteAllText(settingsPath, "overlayEnabled=true\r\nvisibilityMode=hover\r\nbuttonSize=" + configuredSize
-                    + "\r\nbuttonInset=" + configuredInset + "\r\nhoverGraceMs=250\r\nscanIntervalMs=500\r\nlanguage=vi\r\n");
+                    + "\r\nbuttonInset=" + configuredInset + "\r\nhoverGraceMs=250\r\nscanIntervalMs=500\r\nlanguage=vi\r\nbrowsers=" + BrowserCatalog.Token(_kind) + "\r\n");
 
                 ScanResult scan = null;
                 try
@@ -416,7 +504,7 @@ namespace Xtension.Tests
                 // A corrupted settings file must fall back to the documented defaults instead of failing to start.
                 Kill(app);
                 Thread.Sleep(500);
-                File.WriteAllText(settingsPath, "overlayEnabled=maybe\r\nvisibilityMode=sideways\r\nbuttonSize=not-a-number\r\nhoverGraceMs=999999\r\n");
+                File.WriteAllText(settingsPath, "overlayEnabled=maybe\r\nvisibilityMode=sideways\r\nbuttonSize=not-a-number\r\nhoverGraceMs=999999\r\nbrowsers=" + BrowserCatalog.Token(_kind) + "\r\n");
                 app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
                 SetForegroundWindow(brave);
                 ScanResult fallback = null;
@@ -493,8 +581,7 @@ namespace Xtension.Tests
             }
             catch (AssertionFailure)
             {
-                Console.WriteLine("INFO latency " + label + " skipped: the × stayed visible with the pointer away");
-                return;
+                throw new AssertionFailure("Latency measurement requires the hover button to hide with the pointer away");
             }
             Stopwatch watch = Stopwatch.StartNew();
             SetCursorPos(tab.Left + tab.Width / 2, tab.Top + tab.Height / 2);
@@ -516,12 +603,12 @@ namespace Xtension.Tests
                 Stopwatch watch = Stopwatch.StartNew();
                 ScanResult result = UiaTabScanner.Scan(brave, size, inset);
                 watch.Stop();
-                if (result.Outcome != ScanOutcome.Ready) return;
+                Assert.AreEqual(ScanOutcome.Ready, result.Outcome, "every latency sample must confirm a selected tab");
                 samples.Add(watch.ElapsedMilliseconds);
             }
             samples.Sort();
             long p50 = samples[samples.Count / 2];
-            long p95 = samples[(int)((samples.Count - 1) * 0.95)];
+            long p95 = samples[(int)Math.Ceiling(samples.Count * 0.95) - 1];
             Console.WriteLine("INFO latency " + label + " samples=" + samples.Count + " p50Ms=" + p50
                 + " p95Ms=" + p95 + " maxMs=" + samples[samples.Count - 1] + " (harness-side scan of a real browser)");
         }

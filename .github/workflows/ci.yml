@@ -32,13 +32,17 @@ jobs:
         run: ./scripts/verify-source.ps1
       - name: Run unit tests (pure core)
         shell: pwsh
-        run: ./scripts/test.ps1
+        run: |
+          ./scripts/test.ps1 -Arch x86
+          ./scripts/test.ps1 -Arch x64
 
       - name: Windows PowerShell 5.1 source and test parity
         shell: powershell
         run: |
           ./scripts/verify-source.ps1
-          ./scripts/test.ps1
+          ./scripts/test.ps1 -Arch x86
+          ./scripts/test.ps1 -Arch x64
+          ./scripts/test-fixture-process.ps1
 
   build:
     name: Build ${{ matrix.arch }}
@@ -118,7 +122,7 @@ jobs:
       - name: Download and checksum-verify the published baseline
         shell: powershell
         env:
-          BASELINE_TAG: v0.1.0-dev3
+          BASELINE_TAG: v0.1.0-dev4
         run: |
           $ErrorActionPreference = 'Stop'
           $tag = $env:BASELINE_TAG
@@ -132,16 +136,43 @@ jobs:
           $expected = ($line[0] -split '  ', 2)[0]
           $actual = (Get-FileHash -LiteralPath (Join-Path $destination $asset) -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -ne $expected) { throw 'Published baseline checksum mismatch.' }
-          Write-Host "::notice title=Published baseline under measurement::$asset sha256=$actual"
+          & git fetch --no-tags origin "refs/tags/${tag}:refs/tags/${tag}"
+          if ($LASTEXITCODE -ne 0) { throw 'Baseline source tag fetch failed.' }
+          $sourceVersion = (& git show "${tag}:VERSION").Trim()
+          if ($LASTEXITCODE -ne 0 -or $tag -ne "v$sourceVersion") { throw 'Baseline source/version mismatch.' }
+          $binary = Join-Path $destination $asset
+          if ([System.Diagnostics.FileVersionInfo]::GetVersionInfo($binary).ProductVersion -ne $sourceVersion) { throw 'Baseline executable version mismatch.' }
+          # The published dev4 x64 hash is pinned independently of the downloaded manifest.
+          if ($actual -ne '35b5a67b2c416666b61d43dc1451e8e17c49c081c65226ec5e8cea407c6cce82') { throw 'Baseline differs from recorded dev4 bytes.' }
+          $baselineCommit = (& git rev-parse "${tag}^{}").Trim()
+          Write-Host "::notice title=Published baseline under measurement::$asset sha256=$actual source=$baselineCommit version=$sourceVersion"
       - name: Measure both shipped EXEs on this runner
         shell: powershell
         env:
-          BASELINE_TAG: v0.1.0-dev3
+          BASELINE_TAG: v0.1.0-dev4
         run: |
           ./scripts/measure-performance.ps1 -Arch x64 -Seconds 20 `
             -Baseline ("dist/baseline/Xtension-" + $env:BASELINE_TAG + "-win-x64.exe") `
             -Candidate 'dist/Xtension-win-x64.exe' `
             -BaselineLabel $env:BASELINE_TAG -CandidateLabel 'candidate'
+      - name: Publish complete resource summary
+        shell: powershell
+        run: |
+          $block = ''
+          $part = 1
+          foreach ($line in (Get-Content -LiteralPath dist/perf/performance-x64.txt)) {
+            if ($block.Length + $line.Length -gt 2800) {
+              $encoded = $block.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Host ("::notice title=Complete resource comparison part " + $part + "::" + $encoded)
+              $part++
+              $block = ''
+            }
+            $block += $line + "`n"
+          }
+          if ($block) {
+            $encoded = $block.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Host ("::notice title=Complete resource comparison part " + $part + "::" + $encoded)
+          }
       - name: Upload resource evidence
         uses: actions/upload-artifact@v4
         with:
@@ -151,11 +182,12 @@ jobs:
           retention-days: 30
 
   brave-smoke:
-    name: Isolated real Brave smoke ${{ matrix.arch }}
+    name: Isolated real browser ${{ matrix.browser }} ${{ matrix.arch }} (${{ matrix.browser == 'edge' && 'refusal' || 'acceptance' }})
     strategy:
       fail-fast: false
       matrix:
         arch: [x86, x64]
+        browser: [brave, chrome, edge]
     needs: static-and-tests
     runs-on: windows-latest
     timeout-minutes: 15
@@ -229,6 +261,6 @@ jobs:
           if ($actual -ne $expected) { throw 'Published EXE checksum mismatch.' }
           Copy-Item -LiteralPath (Join-Path $destination $asset) -Destination "dist/Xtension-win-$($env:TEST_ARCH).exe" -Force
           Write-Host "::notice title=Published binary under test::$asset sha256=$actual"
-      - name: Run shipped candidate against isolated Brave profile
+      - name: Run shipped candidate against isolated browser profile
         shell: powershell
-        run: ./scripts/test-brave.ps1 -Arch ${{ matrix.arch }}
+        run: ./scripts/test-brave.ps1 -Arch ${{ matrix.arch }} -Browser ${{ matrix.browser }} -ExpectUnsupported:('${{ matrix.browser }}' -eq 'edge')

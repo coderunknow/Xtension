@@ -61,6 +61,16 @@ namespace Xtension
     internal sealed class TabInfo
     {
         public string Name = string.Empty;
+        /// <summary>Provider runtime identity, scoped to this UIA lifetime. Never persisted or logged.</summary>
+        public int[] RuntimeId;
+
+        public static bool SameIdentity(int[] expected, int[] actual)
+        {
+            if (expected == null || actual == null || expected.Length == 0 || expected.Length != actual.Length) return false;
+            for (int index = 0; index < expected.Length; index++)
+                if (expected[index] != actual[index]) return false;
+            return true;
+        }
         public Rectangle Bounds = Rectangle.Empty;
         public bool SelectionKnown;
         public bool Selected;

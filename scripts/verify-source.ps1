@@ -27,7 +27,7 @@ $required = @(
     'Xtension.csproj', 'app.manifest.template', '.gitignore', '.gitattributes',
     'scripts\build.ps1', 'scripts\test.ps1', 'scripts\toolchain.ps1', 'scripts\update-version.ps1', 'scripts\verify-source.ps1',
     'scripts\package.ps1', 'scripts\measure-performance.ps1', 'docs\RELEASE_CAPABILITIES.md', 'docs\DEV3_AUDIT.md',
-    'docs\DEV4_AUDIT.md', 'assets\xtension.ico', 'assets\xtension-256.png', 'tools\generate-icon.py',
+    'docs\DEV4_AUDIT.md', 'docs\DEV5_AUDIT.md', 'docs\PLATFORM_FEASIBILITY.md', 'assets\xtension.ico', 'assets\xtension-256.png', 'tools\generate-icon.py',
     'tests\UnitTests\TestFramework.cs', 'tests\UnitTests\Program.cs',
     '.github\workflows\ci.yml', '.github\workflows\release.yml'
 )
@@ -158,7 +158,7 @@ foreach ($buildName in @("build.ps1", "test-windows.ps1")) {
 # optimistic sentence fails this check instead of shipping as an unverified claim.
 $negativeMarkers = @("not supported", "unsupported", "blocked", "not implemented", "not verified", "cannot", "no ",
     "nothing", "would ", "plan", "limit", "deferred", "without")
-foreach ($documentName in @('README.md', 'CHANGELOG.md', 'docs\RELEASE_CAPABILITIES.md', 'docs\DEV3_AUDIT.md', 'docs\DEV4_AUDIT.md')) {
+foreach ($documentName in @('README.md', 'CHANGELOG.md', 'docs\RELEASE_CAPABILITIES.md', 'docs\DEV3_AUDIT.md', 'docs\DEV4_AUDIT.md', 'docs\DEV5_AUDIT.md', 'docs\PLATFORM_FEASIBILITY.md')) {
     $documentPath = Join-Path $root $documentName
     if (-not (Test-Path -LiteralPath $documentPath)) { continue }
     $documentLine = 0

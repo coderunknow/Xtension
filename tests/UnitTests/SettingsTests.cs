@@ -25,6 +25,35 @@ namespace Xtension.Tests
         }
 
         [Test]
+        public static void FailedBatchDoesNotLeakIntoCacheOrLaterSave()
+        {
+            string directory = NewDirectory();
+            string path = Path.Combine(directory, "settings.ini");
+            try
+            {
+                SettingsStore store = new SettingsStore(path);
+                store.SetString("future", "original");
+                string before = File.ReadAllText(path);
+                Directory.CreateDirectory(path + ".tmp");
+                bool failed = false;
+                try { store.SetMany(new string[] { "future", "new" }, new string[] { "changed", "pending" }); }
+                catch (Exception) { failed = true; }
+                Assert.IsTrue(failed, "blocked write fails");
+                Assert.AreEqual("original", store.GetRaw("future"), "cache stays committed");
+                Assert.AreEqual(before, File.ReadAllText(path), "disk stays committed");
+                Directory.Delete(path + ".tmp");
+                store.Save();
+                Assert.AreEqual(before, File.ReadAllText(path), "later save cannot leak failed values");
+                failed = false;
+                try { store.SetMany(new string[] { "future", "" }, new string[] { "changed", "invalid" }); }
+                catch (ArgumentException) { failed = true; }
+                Assert.IsTrue(failed, "invalid batch fails");
+                Assert.AreEqual("original", store.GetRaw("future"), "validation is transactional too");
+            }
+            finally { CleanUp(directory); }
+        }
+
+        [Test]
         public static void DefaultsMatchTheDocumentedValues()
         {
             AppSettings defaults = AppSettings.Defaults();

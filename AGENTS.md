@@ -2,13 +2,13 @@
 
 ## What this project is
 
-Xtension is a Windows-only tray utility. It shows one custom × on the selected horizontal tab of a Brave window, so tabs are not closed by accident. It is a .NET Framework 4.8 WinForms app with no NuGet dependencies.
+Xtension is a Windows-only tray utility. It shows one custom × on the selected horizontal tab of an enabled supported browser window, so tabs are not closed by accident. It is a .NET Framework 4.8 WinForms app with no NuGet dependencies.
 
 Platform scope: Windows x86 and x64 only. Do not claim macOS or Linux support, and do not add placeholder binaries.
 
 ## Non-negotiable rules
 
-1. **Fail closed.** The × may send Ctrl+W only after a fresh UI Automation scan confirms exactly one selected horizontal tab, the click lands on that tab's ×, and Brave is still the foreground window. Any doubt hides the button.
+1. **Fail closed.** The × may send Ctrl+W only after a fresh UI Automation scan confirms exactly one selected horizontal tab, the click lands on that tab's ×, the fresh runtime identity matches the displayed target, and that enabled browser is still the foreground window. Any doubt hides the button.
 2. **C# 5 only.** The compiler is .NET Framework csc with `/langversion:5`. Do not use `?.`, `$""`, `nameof`, `out var`, `when` filters, expression-bodied members, or getter-only auto-properties. `scripts/verify-source.ps1` checks the common cases.
 3. **One version source.** Edit `VERSION` only. `scripts/update-version.ps1` generates `build/generated/VersionInfo.g.cs` and `build/generated/app.manifest`. Never hard-code a version in source, docs, or the manifest template.
 4. **No private data in logs.** Never log tab titles, window titles, or URLs. `AppLog` must not reference titles. Diagnostics shows titles in the UI only.
@@ -54,14 +54,14 @@ compiles.
 | --- | --- |
 | `src/Core` | Pure logic: geometry, tab selection, close guard, hover policy, typed settings, string table, clock, logging. Unit-tested. |
 | `src/Interop` | Win32 P/Invoke, pointer position read, process identity, `SendInput` for Ctrl+W. No pointer injection. |
-| `src/Uia` | Bounded, read-only UI Automation walk of a Brave window. |
+| `src/Uia` | Bounded, read-only UI Automation walk of a supported browser window. |
 | `src/App` | State machine (`ActiveTabController`), worker threads (`ScanWorker`), tray context (`TrayAppContext`, also the `ISettingsHost` implementation), single instance, startup entry. |
 | `src/UI` | Overlay window, dashboard (`MainForm`), settings (`SettingsForm`, `ISettingsHost`), diagnostics, layout helpers, tray icon drawing. |
 | `tests/UnitTests` | Minimal test runner with `[Test]` attributes. No external test framework. |
-| `tests/WindowsTests` | Synthetic UI Automation/layout/settings/injection tests and the resource measurement mode, plus the real-Brave acceptance phase. |
+| `tests/WindowsTests` | Synthetic UI Automation/layout/settings/injection tests and the resource measurement mode, plus the real-browser acceptance phase for Brave, Chrome and Edge. |
 | `scripts/` | Build, test, verify, package, version generation, and the CI-only resource measurement. |
 | `docs/` | Release capability boundary, and one audit document per release with findings and remaining risk. |
-| `.github/workflows` | CI (static checks, tests, both builds, MSBuild, packaging, resource comparison, real-Brave smoke) and tag-triggered prerelease. |
+| `.github/workflows` | CI (static checks, tests, both builds, MSBuild, packaging, resource comparison, real-browser smoke) and tag-triggered prerelease. |
 
 ## Before you change behaviour
 

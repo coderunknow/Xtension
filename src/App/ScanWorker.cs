@@ -15,6 +15,7 @@ namespace Xtension
         public readonly long Epoch;
         public readonly IntPtr Window;
         public readonly System.Drawing.Point ClickScreen;
+        public int[] ExpectedTabRuntimeId;
 
         public ScanRequest(long id, ScanLane lane, long epoch, IntPtr window, System.Drawing.Point clickScreen)
         {

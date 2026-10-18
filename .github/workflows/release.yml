@@ -27,6 +27,18 @@ jobs:
             *-*) echo "Prerelease version ${version}; release will be marked prerelease and not latest." ;;
             *) echo "::error::Stable version ${version} is not allowed by this prerelease workflow." >&2; exit 1 ;;
           esac
+      - name: Require exact merged main commit with successful CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse HEAD)"
+          main="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
+          test "$commit" = "$main" || { echo 'Release tag must target current merged main.' >&2; exit 1; }
+          count="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${commit}&event=push&status=success&branch=main" --jq .total_count)"
+          test "$count" -gt 0 || { echo 'No successful main CI for this exact release commit.' >&2; exit 1; }
+
 
   build:
     name: Build ${{ matrix.arch }}
@@ -46,7 +58,7 @@ jobs:
         run: ./scripts/verify-source.ps1
       - name: Run unit tests
         shell: pwsh
-        run: ./scripts/test.ps1
+        run: ./scripts/test.ps1 -Arch ${{ matrix.arch }}
       - name: Build Xtension (${{ matrix.arch }})
         shell: pwsh
         run: ./scripts/build.ps1 -Arch ${{ matrix.arch }}
@@ -63,9 +75,34 @@ jobs:
           if-no-files-found: error
           retention-days: 2
 
+  browser-acceptance:
+    name: Release browser ${{ matrix.browser }} ${{ matrix.arch }} (${{ matrix.browser == 'edge' && 'refusal' || 'acceptance' }})
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86, x64]
+        browser: [brave, chrome, edge]
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Xtension-win-${{ matrix.arch }}
+          path: dist
+      - name: Build and exercise harness without replacing release executable
+        shell: powershell
+        run: ./scripts/test-windows.ps1 -Arch ${{ matrix.arch }}
+      - name: Verify exact release executable with isolated browser profile
+        shell: powershell
+        run: ./scripts/test-brave.ps1 -Arch ${{ matrix.arch }} -Browser ${{ matrix.browser }} -ExpectUnsupported:('${{ matrix.browser }}' -eq 'edge')
+
   publish:
     name: Publish prerelease
-    needs: build
+    needs: [build, browser-acceptance]
     runs-on: windows-latest
     permissions:
       contents: write
@@ -111,6 +148,8 @@ jobs:
           if ((Get-FileHash $manifest).Hash -ne (Get-FileHash 'dist/release/SHA256SUMS.txt').Hash) {
             throw 'Published checksum manifest differs from packaged manifest.'
           }
+          $manifestHash = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "::notice title=Published asset verified::SHA256SUMS.txt sha256=$manifestHash"
           foreach ($line in Get-Content -LiteralPath $manifest) {
             $parts = $line -split '  ', 2
             $hash = (Get-FileHash -LiteralPath (Join-Path $destination $parts[1]) -Algorithm SHA256).Hash.ToLowerInvariant()

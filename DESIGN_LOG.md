@@ -402,3 +402,67 @@ records the decisions behind the fixes, because two of them are design decisions
 - **Amended rule for any future gate work:** when a gate fails, read it as a statement about the repository first -
   two of the three failures in this round were genuine pre-existing defects in the published dev3 window, and one was
   a genuine defect in a test written for this candidate.
+
+## Entry 019 — dev5 mandate and verified baseline (2026-10-18)
+
+Owner scope: “Xtension v0.1.0-dev5 — Comprehensive Repository Audit, Reliability Engineering, Multi-Browser Support, Cross-Platform Feasibility and Verified Prerelease”. Priority order, verbatim:
+
+> 1. **A — Comprehensive repository audit.** Identify existing defects, latent risks, incomplete implementations, inconsistent behavior, resource waste, and weaknesses in the development or release process. Investigate beyond the reported issues.
+> 2. **C — Address unverified and residual risks.** Prioritize demonstrable reliability, safety, compatibility, lifecycle, UI Automation, concurrency, and real-browser problems according to evidence and severity.
+> 3. **H — Add valuable new features.** Research, rank, and implement justified features after the repository audit and critical risk work. Do not add features merely to increase the feature count.
+
+“retain the current design and fix defects only”; C# 5, .NET Framework 4.8, Windows x86/x64, fail-closed closing, settings compatibility, bilingual strings, MIT license and append-only history remain requirements. The owner reports the historical audio symptom is no longer encountered; this is not proof of its cause. No audio subsystem change is planned. Additional browsers require actual acceptance, not ancestry. macOS, Linux X11 and Wayland remain unsupported unless real implementations and verification exist. Normal PR merge and prerelease publication are authorized only after the acceptance gates; no manual owner session is mandatory.
+
+Reconnaissance before implementation: clean session branch `arena/f7f71a18-xtension`; HEAD and fetched `origin/main` both `685975ec088ac28a722e004d6354c9fc1cbd6e63`. PRs 1–5 are merged, none open. Tags/releases dev1–dev4 exist; dev5 tag absent. Main CI `38924457492` succeeded. Published dev4 tag resolves to `15900f524951b14ec7658e2ddadf07166f10ed3a`; main adds the historical release record only. Release `38922772057` succeeded, dev4 prerelease=true/draft=false, four assets. Direct local asset download was attempted and failed at the disallowed release-asset host (EOF); Windows CI must download and hash the published executable before measuring it. Local Linux has no PowerShell, C# compiler or Windows desktop. Source inspection and Python aids are not execution evidence.
+
+Initial safety finding: `TabInfo` has no runtime identity; `OnOverlayClicked` clears the displayed confirmation and `CloseGuard` compares only the newly selected tab's rectangle against the click. A different tab selected into the same rectangle can therefore satisfy the gate. Plan: carry the displayed tab's UIA runtime identity and geometry into the request, require an exact match in the fresh scan, and refuse missing identity. This strengthens rather than replaces all existing gates. Regression coverage must include a different identity at identical geometry.
+
+Browser investigation order: Chrome and Edge first (existing catalog boundary, runner installations and independent real UIA acceptance possible); Firefox remains refused unless its different provider can be implemented and tested. Default mask remains Brave only. Support promotion is gated on actual CI evidence. Feature shortlist and platform analysis follow the full source trace in the audit. VERSION will change on this development branch before candidate CI, not by pushing a version edit directly to main; the merged, checked commit can then be tagged without an untested post-merge edit.
+
+## Entry 020 — dev5 first implementation decisions (2026-10-18)
+
+Source trace confirmed D5-01–08 in the new audit. Exact identity, transactional settings, settings ownership, callback marshalling, hook filtering and non-skipping latency assertions implemented before feature expansion. Chromium contract now also requires direct UIA Tab → TabItem parentage. Chrome/Edge are experimental candidate entries so CI can test actual enabled application behavior, not promoted to verified on ancestry. Six browser/architecture jobs must pass before publication. Existing Brave-only default stays unchanged. Both binaries retain all close deadlines/budgets/freshness/cooldown/modifier/foreground/geometry gates.
+
+Candidate features ranked: (1) independently tested Chrome/Edge opt-in support (high workflow value, existing boundary, moderate maintenance, actual-run acceptance); (2) complete forward-compatible settings backups (unknown values currently survive rewrites/import but are omitted on export; bounded core tests possible); (3) keyboard/global hotkeys (deferred: activation conflicts and input complexity with little evidence of need); (4) a cross-platform rewrite (deferred pending separate native feasibility and acceptance). Current UI design is retained. Initial candidate CI will establish compiler/runtime facts before support promotion or any release decision.
+
+## Entry 021 — dev5 continued audit and feature implementation (2026-10-18)
+
+First CI `39106016202` executed static checks and core tests: 97 passed, 1 failed. The failure is a stale fixture that uses `browsers=chrome` as an invalid value; Chrome is now deliberately implemented for candidate acceptance. Changed the invalid-provider fixture to Firefox, retaining both rejection assertions. No successful Windows builds or browser runs occurred in that run (dependent jobs skipped).
+
+Further click-lifecycle trace: a held mouse press could survive an overlay move or identity change. Cancel arming on real placement change and displayed-identity change, including identical geometry; capture the identity actually displayed, not the latest diagnostics result. Add synthetic mouse-down/target-change/mouse-up coverage. UIA runtime IDs are session-lifetime identities only, never stored or logged.
+
+Selected feature #2 implemented: forward-compatible export now includes bounded unknown settings values as well as known typed values, while excluding backup metadata overrides. Full export/parse/apply round-trip test added. Existing key=value schema is retained (the earlier README's JSON wording was inaccurate); no dependency or UI redesign. Custom unknown values are configuration, not a sanitization boundary; users should inspect backups before sharing.
+
+Performance protocol: three 20-second observations per binary/state, alternating order, fresh disposable browser profile per observation, same runner/browser/default configuration. Pin the previously recorded dev4 hash independently of its downloaded manifest and verify baseline tag/source VERSION and binary version. Report raw values and variability; do not invent a relative threshold from one runner's three samples. Existing readiness and acceptance latency ceilings remain gates. Safe real-browser stress adds 24 rapid selection switches with exact before/after tab-set preservation and overlay convergence.
+
+## Entry 022 — lifecycle, UI and release governance (2026-10-18)
+
+Further audit found the tab watcher retained its registered HWND after unsubscription; returning to the same browser HWND therefore skipped registration. Reset the identity on unsubscribe and add a real synthetic UIA registration-cycle regression. Found the settings import result erased by its own refresh; refresh first and set the outcome last, testing the same method called by the file dialog. No visual redesign.
+
+Release governance strengthened in workflow: require version-matching prerelease tag at current merged main with successful exact-commit main push CI; real-browser jobs now run exact release-build artifacts before publish (three browsers, both architectures). This is additional gating, not permission to skip candidate CI. Platform feasibility report documents separate native-host paths and permission/identity/input boundaries. Windows host remains; macOS and Linux X11/Wayland are unsupported. No native GUI environment exists to verify a port and none is attempted.
+
+## Entry 023 — diagnostics evidence and bounded fixture transport (2026-10-18)
+
+Audit found the dev4 lane test could not prove separation: it checked enum inequality and a single sample, while only aggregate percentiles were exposed. Added per-lane retained sample counts and scan/queue p95 to the existing diagnostics text, with mixed-duration regression. No safety input reads metrics. Bilingual backup messages now match actual default-on-rejected-value behavior and disclose user-authored unknown values. Current documentation corrected JSON/tray-option claims without redesigning the UI.
+
+Candidate execution transport is bounded independently of browser descendant lifetime: file-backed stdout/stderr, exact exit-code propagation, timeout failure and filtered evidence. A script regression starts a parent with a surviving descendant, verifies parent code/output while the child is still alive, and requires deadline failure for a stalled process. This is a harness reliability change, not a claim about the cause of a browser stall; the outstanding run must provide its own actual result.
+
+## Entry 024 — scope rule clarification (2026-10-18)
+
+The owner explicitly approved multi-browser expansion. AGENTS.md's Brave-only product/rule wording therefore needs the minimal generalization to “enabled supported browser”, with the new exact runtime-identity requirement added. The foreground requirement itself is not loosened: it must be the very window validated, an implemented provider, and user-enabled. Framework/compiler/platform constraints remain unchanged. This reconciles the contributor instructions with the approved product evolution, rather than leaving a rule that contradicts tested additional providers.
+
+## Entry 025 — Edge contract diagnosis and lifecycle coverage (2026-10-18)
+
+The file-backed runner now returns Chrome success for both architectures; Edge fails on both with post-restart ScanIncomplete (197 nodes, ~168/338 ms). This is not a speed/budget justification: no limit or parent/identity gate is to be loosened. Before changing any provider assumption, add privacy-safe first-incomplete-cause metadata (operation/enum/numbers only, never names) so the failed shape is identifiable. The release remains blocked. Additional Windows regressions exercise repeated context teardown and named-instance signalling; these are synthetic lifecycle checks, not Shell visual/startup acceptance.
+
+## Entry 026 — symmetric event-to-visible comparison (2026-10-18)
+
+The resource harness can measure a real foreground tab-switch-to-overlay-update interval for both EXEs, not just candidate hover latency. Add five Ctrl+Tab transitions after each 20-second foreground resource window, with the same scanner, UIA identities, geometry, fixture and foreground checks for both binaries. Time native input submission to observed changed overlay bounds, then verify the resulting exact selected-tab geometry. Missing/failed samples are explicit, not zero; this is coarse harness observation, not a physical display latency or close authorization. Keep resource CPU/memory sampling separate and do not alter product safety timers or introduce performance acceptance thresholds. Collect n/p50/p95/max and disclose the small sample and shared-runner noise.
+
+## Entry 027 — evidence-backed browser scope decision (2026-10-18)
+
+Run 39108277770 reproduces Edge failure in both architectures and identifies DepthBudget, not time (197 nodes, 160/181 ms). There is no recorded, stable narrower Edge chrome-root contract that would justify skipping the deeper subtree. Do not increase the cap, ignore incomplete nodes, disable built-in UI merely for the fixture, or claim another browser because Chromium is shared. Withdraw Edge from offerable/implemented providers for dev5; keep exact process detection for diagnostics and add explicit actual-EXE refusal tests for a signed isolated Edge fixture in both architectures. These are named refusal tests, not replacement green acceptance. Retain the failed acceptance evidence and rank a bounded Edge-specific root contract as follow-up. Chrome independently passed full acceptance in both architectures on 5c97764 / 39108277770, so it can carry that evidence; exact-head gates continue to retest it. The preference for two additional browsers is not fully delivered; safe verified expansion is Brave + opt-in Chrome, not a knowingly incomplete Edge claim.
+
+## Entry 028 — explicit pure-core process architectures (2026-10-18)
+
+The successful pure-core job ran twice under two PowerShell hosts, but test.ps1 emitted default AnyCPU, not separately targeted x86/x64. Do not confuse host parity with process-architecture evidence. Give the existing test script an explicit x86/x64 parameter and distinct output names; run both architectures under both hosts in CI, and use the release build's matrix architecture. No product, compiler language/framework or runtime dependency changes. Correct the audit wording until the new runs prove it.
