@@ -466,3 +466,7 @@ Run 39108277770 reproduces Edge failure in both architectures and identifies Dep
 ## Entry 028 — explicit pure-core process architectures (2026-10-18)
 
 The successful pure-core job ran twice under two PowerShell hosts, but test.ps1 emitted default AnyCPU, not separately targeted x86/x64. Do not confuse host parity with process-architecture evidence. Give the existing test script an explicit x86/x64 parameter and distinct output names; run both architectures under both hosts in CI, and use the release build's matrix architecture. No product, compiler language/framework or runtime dependency changes. Correct the audit wording until the new runs prove it.
+
+## Entry 029 — least-privilege release-gate dependency (2026-10-18)
+
+PR #6 was normally merged at e10de7969531c78a2260b74954bf1190794aee8b after exact-head CI 39109650977 passed all 12 jobs. Before creating an immutable tag, explicitly declare `actions: read` on verify-tag, the only release job that queries workflow runs. The repository is public and this is not an observed permission failure; it makes the new API dependency explicit rather than relying on public-read/token behavior. Preserve contents:read and no write permission on that job. Submit this narrowly scoped workflow/log follow-up through another normal PR and complete exact-head/main gates; no direct main push, permission bypass or tag replacement.
