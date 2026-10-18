@@ -118,7 +118,7 @@ namespace Xtension
         {
             _overlay = overlay;
             _invoker = invoker;
-            _settings = settings == null ? AppSettings.Defaults() : settings;
+            _settings = settings == null ? AppSettings.Defaults() : settings.Copy();
             _settings.Normalize();
             _enabled = _settings.OverlayEnabled;
             _scan = scanOverride == null ? new Func<IntPtr, ScanResult>(ScanWindow) : scanOverride;
@@ -158,7 +158,7 @@ namespace Xtension
         /// <summary>Current effective settings copy. Callers must go through the Set* methods to apply changes.</summary>
         public AppSettings Settings
         {
-            get { return _settings; }
+            get { return _settings.Copy(); }
         }
 
         /// <summary>Poll cadence for the current state and profile. Used to set the UI timer interval.</summary>
@@ -178,10 +178,7 @@ namespace Xtension
         {
             if (_disposed) return;
             _metrics.CountEvent();
-            long now = Clock.NowMs;
-            if (_eventAtMs == Clock.Never) _eventAtMs = now;
-            _immediatePending = true;
-            _immediateAtMs = now;
+            long eventAt = Clock.NowMs;
             lock (_wakeGate)
             {
                 if (_wakePending) return;
@@ -197,6 +194,10 @@ namespace Xtension
                 _invoker.BeginInvoke(new Action(delegate
                 {
                     lock (_wakeGate) { _wakePending = false; }
+                    if (_disposed) return;
+                    if (_eventAtMs == Clock.Never) _eventAtMs = eventAt;
+                    _immediatePending = true;
+                    _immediateAtMs = eventAt;
                     Tick();
                 }));
             }
@@ -419,6 +420,7 @@ namespace Xtension
         {
             if (_enabled == enabled) return;
             _enabled = enabled;
+            _settings.OverlayEnabled = enabled;
             _closeInFlight = false;
             _notice = StringId.None;
             InvalidateConfirmation();
@@ -511,7 +513,13 @@ namespace Xtension
             SetVisibilityMode(settings.VisibilityMode);
             SetBrowsers(settings.Browsers);
             SetProfile(settings.Profile);
-            if (_overlay.ApplyAppearance(settings)) ForceNotify();
+            bool appearanceChanged = _overlay.ApplyAppearance(settings);
+            _settings.ButtonColor = settings.ButtonColor;
+            _settings.ButtonBorder = settings.ButtonBorder;
+            _settings.ButtonOpacityPercent = settings.ButtonOpacityPercent;
+            _settings.Language = settings.Language;
+            if (appearanceChanged) InvalidateConfirmation();
+            ForceNotify();
             SetEnabled(settings.OverlayEnabled);
         }
 
@@ -616,7 +624,6 @@ namespace Xtension
             if (_disposed) return;
             ScanRequest request = completion.Request;
             long delivered = Clock.NowMs;
-            if (request.Lane != ScanLane.Close)
             {
                 long scanMs = completion.Result == null ? 0 : completion.Result.ElapsedMs;
                 long queued = request.WorkerStartMs == Clock.Never ? 0 : request.WorkerStartMs - request.StartedMs;
@@ -697,7 +704,8 @@ namespace Xtension
 
         private void ShowOverlayFor(ScanResult result)
         {
-            if (result == null || result.SelectedHorizontalTab == null)
+            if (result == null || result.SelectedHorizontalTab == null
+                || result.SelectedHorizontalTab.RuntimeId == null || result.SelectedHorizontalTab.RuntimeId.Length == 0)
             {
                 HideOverlay();
                 return;
@@ -764,10 +772,16 @@ namespace Xtension
         {
             if (_disposed || !_enabled) return;
 
+            // Capture the displayed target before invalidation. A new selected tab at the same coordinates is NOT
+            // the target the user clicked. Missing identity refuses; no title-based fallback is permitted.
+            TabInfo displayed = _latest == null ? null : _latest.SelectedHorizontalTab;
+            int[] expected = displayed == null || displayed.RuntimeId == null ? null : (int[])displayed.RuntimeId.Clone();
+            bool wasVisible = _overlay.Visible;
             // Hide first: the button must not stay clickable while its validation is pending.
             HideOverlay();
             _hover.Reset();
-            if (_closeInFlight) return;
+            if (_closeInFlight || !wasVisible || expected == null || expected.Length == 0
+                || KeyboardInjector.BlockingModifierDown()) return;
 
             if (!Clock.HasElapsed(_lastSentMs, AppInfo.CloseCooldownMs))
             {
@@ -787,6 +801,7 @@ namespace Xtension
 
             InvalidateConfirmation();
             ScanRequest request = new ScanRequest(++_nextRequestId, ScanLane.Close, _epoch, foreground, screenPoint);
+            request.ExpectedTabRuntimeId = expected;
             if (!_closeWorker.TrySubmit(request))
             {
                 _metrics.CountRefused();
@@ -831,6 +846,7 @@ namespace Xtension
             check.Minimized = foreground != IntPtr.Zero && NativeMethods.IsIconic(foreground);
             check.BlockingModifierDown = KeyboardInjector.BlockingModifierDown();
             check.Scan = scan;
+            check.ExpectedTabRuntimeId = request.ExpectedTabRuntimeId;
             check.Click = request.ClickScreen;
             check.NowMs = Clock.NowMs;
             check.StartedMs = request.StartedMs;

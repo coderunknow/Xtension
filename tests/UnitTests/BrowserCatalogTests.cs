@@ -38,8 +38,8 @@ namespace Xtension.Tests
             Assert.AreEqual(BrowserCatalog.ForExecutable("brave.exe").Contract, BrowserCatalog.ForExecutable("chrome.exe").Contract,
                 "the two Chromium browsers really do share a contract");
             Assert.IsTrue(BrowserCatalog.IsSupported(BrowserKind.Brave), "Brave is verified");
-            Assert.IsFalse(BrowserCatalog.IsSupported(BrowserKind.Chrome), "Chrome is not verified");
-            Assert.IsFalse(BrowserCatalog.IsSupported(BrowserKind.Edge), "Edge is not verified");
+            Assert.IsTrue(BrowserCatalog.IsSupported(BrowserKind.Chrome), "Chrome implements the tested contract");
+            Assert.IsTrue(BrowserCatalog.IsSupported(BrowserKind.Edge), "Edge implements the tested contract");
             Assert.IsFalse(BrowserCatalog.IsSupported(BrowserKind.Firefox), "Firefox is not verified");
             Assert.IsFalse(BrowserCatalog.IsSupported(BrowserKind.None), "no window is not a supported browser");
         }
@@ -81,7 +81,7 @@ namespace Xtension.Tests
         public static void OfferableBrowsersAreExactlyTheSupportedOnes()
         {
             BrowserDescriptor[] offerable = BrowserCatalog.Offerable();
-            Assert.AreEqual(1, offerable.Length, "exactly one browser is offered in this build");
+            Assert.AreEqual(3, offerable.Length, "three implemented browsers are offered");
             Assert.AreEqual(BrowserKind.Brave, offerable[0].Kind, "the offered browser is the verified one");
             foreach (BrowserDescriptor descriptor in offerable)
             {
@@ -93,12 +93,12 @@ namespace Xtension.Tests
         [Test]
         public static void MasksAndTokensRoundTripAndUnsupportedTokensAreDropped()
         {
-            Assert.AreEqual("brave", BrowserCatalog.MaskTokenList(BrowserCatalog.SupportedMask()), "the supported mask writes the verified token");
+            Assert.AreEqual("brave,chrome,edge", BrowserCatalog.MaskTokenList(BrowserCatalog.SupportedMask()), "supported mask");
             int mixed = BrowserCatalog.Mask(BrowserKind.Brave) | BrowserCatalog.Mask(BrowserKind.Chrome);
-            Assert.AreEqual("brave", BrowserCatalog.MaskTokenList(mixed), "an unsupported browser is never written to settings");
-            Assert.AreEqual(BrowserCatalog.Mask(BrowserKind.Brave), BrowserCatalog.ParseMask("brave,chrome"),
-                "a hand-edited file cannot enable an unverified browser");
-            Assert.AreEqual(BrowserCatalog.NoBrowsers, BrowserCatalog.ParseMask("chrome;firefox"), "unsupported tokens parse to nothing");
+            Assert.AreEqual("brave,chrome", BrowserCatalog.MaskTokenList(mixed), "opt-in browsers round trip");
+            Assert.AreEqual(mixed, BrowserCatalog.ParseMask("brave,chrome"), "explicit opt in");
+            Assert.AreEqual(BrowserCatalog.NoBrowsers, BrowserCatalog.ParseMask("firefox"), "unimplemented provider refuses");
+            Assert.AreEqual(BrowserCatalog.Mask(BrowserKind.Brave), AppSettings.Defaults().Browsers, "default remains Brave only");
             Assert.AreEqual(BrowserCatalog.NoBrowsers, BrowserCatalog.ParseMask(null), "an empty list enables nothing");
             Assert.AreEqual(BrowserCatalog.Mask(BrowserKind.Brave), BrowserCatalog.ParseMask("BRAVE"), "tokens are case-insensitive");
             Assert.AreEqual(BrowserKind.Brave, BrowserCatalog.ParseToken(BrowserCatalog.Token(BrowserKind.Brave)), "token round trip");
@@ -108,9 +108,9 @@ namespace Xtension.Tests
                 "an unimplemented browser is not in the supported mask");
 
             BrowserDescriptor[] enabled = BrowserCatalog.Enabled(mixed);
-            Assert.AreEqual(1, enabled.Length, "only the supported and enabled browser is reported as enabled");
+            Assert.AreEqual(2, enabled.Length, "only explicitly enabled browsers are reported");
             Assert.IsTrue(BrowserCatalog.IsEnabled(mixed, BrowserKind.Brave), "the enabled browser is reported enabled");
-            Assert.IsFalse(BrowserCatalog.IsEnabled(mixed, BrowserKind.Chrome), "an unsupported browser is never enabled");
+            Assert.IsTrue(BrowserCatalog.IsEnabled(mixed, BrowserKind.Chrome), "Chrome requires explicit opt in");
             Assert.IsFalse(BrowserCatalog.IsEnabled(BrowserCatalog.NoBrowsers, BrowserKind.Brave), "an empty mask enables nothing");
             Assert.IsFalse(BrowserCatalog.IsEnabled(mixed, BrowserKind.None), "no window is never enabled");
         }

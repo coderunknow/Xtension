@@ -500,3 +500,11 @@ deadline) was refused, and the deadline logic is untouched.
   connect (`gh release download v0.1.0-dev4` and `gh run download 38922772057 -n Xtension-win-x64`). The equivalent
   verification therefore rests on the workflow's own step, which runs inside GitHub and succeeded; nothing was
   substituted for it and no hash in this log was computed locally.
+
+## 2026-10-18 — dev5 reconnaissance
+
+Read AGENTS.md first; fetched origin/tags, checked status, branches, PR history, releases/assets and CI history with git/gh. Baseline and owner decisions appended to DESIGN_LOG entry 019. No remote changes yet. Local asset download failed (release-assets host EOF); no local binary hash or Windows runtime result claimed. Source audit in progress; runtime identity is absent from the existing close gate despite the exact-target requirement. Required pre-implementation documents and implementation/test/workflow paths are being reviewed, without treating historic claims as new acceptance.
+
+## 2026-10-18 — first dev5 implementation, CI pending
+
+Implemented audit D5-01–08 and regression tests; changed VERSION only for version generation. Expanded browser harness to explicit browser selection, signed hosted Chrome/Edge fixtures and disabled-by-default refusal; added six architecture/browser CI combinations and switched baseline to dev4. Python API/static aids pass. No actual PowerShell/C# execution locally, no performance or browser result yet. Removed importer rollback rewrite: the now transactional atomic store leaves old cache/file unchanged on failure instead of rewriting good bytes non-atomically. Candidate release gates remain pending.

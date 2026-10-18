@@ -19,6 +19,8 @@ namespace Xtension
         /// <summary>True when Shift, Alt or Win is physically held. Ctrl+Shift+W would close the whole window.</summary>
         public bool BlockingModifierDown;
         public ScanResult Scan;
+        /// <summary>Identity of the tab which displayed the clicked button, copied before invalidation.</summary>
+        public int[] ExpectedTabRuntimeId;
         /// <summary>Configured × size in logical pixels, so the validated area matches the button on screen.</summary>
         public int OverlaySizeLogical = AppInfo.DefaultButtonSizeLogical;
         /// <summary>Configured inset from the tab's right edge, in logical pixels.</summary>
@@ -74,6 +76,9 @@ namespace Xtension
             if (scan.Window != request.ScannedWindow) return CloseDecision.Reject("scan belongs to another window");
             if (scan.Outcome != ScanOutcome.Ready || scan.SelectedHorizontalTab == null)
                 return CloseDecision.Reject("active tab not confirmed (" + scan.Outcome + ")");
+
+            if (!TabInfo.SameIdentity(request.ExpectedTabRuntimeId, scan.SelectedHorizontalTab.RuntimeId))
+                return CloseDecision.Reject("selected tab identity changed or unavailable");
 
             Rectangle tab = scan.SelectedHorizontalTab.Bounds;
             Rectangle closeArea = TabGeometry.GetOverlayBounds(tab, scan.Dpi, request.OverlaySizeLogical, request.OverlayInsetLogical);

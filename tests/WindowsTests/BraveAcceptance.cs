@@ -12,6 +12,7 @@ namespace Xtension.Tests
     // Isolated runner profile only. No personal browser, no browsing titles/URLs in output.
     internal static class BraveAcceptance
     {
+        private static BrowserKind _kind;
         private delegate bool WindowCallback(IntPtr hwnd, IntPtr state);
         [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr state);
         [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
@@ -22,6 +23,10 @@ namespace Xtension.Tests
 
         public static int Run(string bravePath, string candidatePath, string profile)
         {
+            BrowserDescriptor descriptor = BrowserCatalog.ForExecutable(Path.GetFileName(bravePath));
+            if (descriptor == null) return 2;
+            _kind = descriptor.Kind;
+            Console.WriteLine("PASS browser fixture token=" + descriptor.Token);
             Exception failure = null;
             Thread worker = new Thread(delegate()
             {
@@ -44,14 +49,14 @@ namespace Xtension.Tests
                 Console.WriteLine("FAIL Brave acceptance: " + failure.GetType().Name + ": " + failure.Message);
                 return 1;
             }
-            Console.WriteLine("PASS isolated real-Brave smoke; not a full desktop/DPI acceptance matrix.");
+            Console.WriteLine("PASS isolated real-browser smoke; not a full desktop/DPI acceptance matrix.");
             return 0;
         }
 
         private static void Exercise(string bravePath, string candidatePath, string profile)
         {
             string version = FileVersionInfo.GetVersionInfo(bravePath).ProductVersion;
-            Console.WriteLine("Brave binary version=" + version + "; OS=" + Environment.OSVersion.Version + "; test pointer bytes=" + IntPtr.Size);
+            Console.WriteLine("Browser binary version=" + version + "; OS=" + Environment.OSVersion.Version + "; test pointer bytes=" + IntPtr.Size);
             using (Process browser = Process.Start(new ProcessStartInfo(bravePath,
                 "--user-data-dir=\"" + profile + "\" --no-first-run --no-default-browser-check --disable-background-networking --disable-component-update --disable-sync --new-window about:blank about:blank about:blank") { UseShellExecute = false }))
             {
@@ -75,6 +80,19 @@ namespace Xtension.Tests
                         throw new AssertionFailure("Initial Brave scan: " + (initial == null ? "no result" : initial.Outcome + "; " + initial.Error + "; nodes=" + initial.NodesVisited + "; tabs=" + initial.Tabs.Count));
                     }
                     Console.WriteLine("PASS Brave already running: selected horizontal tab confirmed; nodes=" + initial.NodesVisited + "; dpi=" + initial.Dpi);
+                    AppPaths.EnsureDirectory();
+                    if (_kind != BrowserKind.Brave)
+                    {
+                        File.WriteAllText(AppPaths.SettingsFile, "browsers=brave\r\n");
+                        app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
+                        SetForegroundWindow(brave);
+                        Thread.Sleep(2500);
+                        Assert.IsTrue(FindVisibleWindow(app.Id, true) == IntPtr.Zero, "disabled browser has no overlay");
+                        Kill(app);
+                        Thread.Sleep(500);
+                        Console.WriteLine("PASS Brave-only settings refuse the new browser before opt in");
+                    }
+                    File.WriteAllText(AppPaths.SettingsFile, "browsers=" + BrowserCatalog.Token(_kind) + "\r\n");
                     app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
                     SetForegroundWindow(brave);
                     IntPtr overlay = IntPtr.Zero;
@@ -90,7 +108,7 @@ namespace Xtension.Tests
                     // The expected token comes from the product's own formatter, so the assertion cannot pass on a
                     // typo in the log line and cannot break when the line is reworded. It fails if the shipped
                     // default ever stops being the verified browser.
-                    string expectedBrowsers = "browsers " + BrowserCatalog.MaskTokenList(BrowserCatalog.Mask(BrowserKind.Brave));
+                    string expectedBrowsers = "browsers " + BrowserCatalog.MaskTokenList(BrowserCatalog.Mask(_kind));
                     Assert.IsTrue(started.Contains(expectedBrowsers),
                         "the shipped EXE starts with the verified browser enabled (expected '" + expectedBrowsers + "'): " + started);
                     Console.WriteLine("INFO shipped EXE icon and tray source: " + started);
@@ -309,7 +327,7 @@ namespace Xtension.Tests
                 }
 
                 File.WriteAllText(settingsPath, "overlayEnabled=true\r\nvisibilityMode=hover\r\nbuttonSize=" + configuredSize
-                    + "\r\nbuttonInset=" + configuredInset + "\r\nhoverGraceMs=250\r\nscanIntervalMs=500\r\nlanguage=vi\r\n");
+                    + "\r\nbuttonInset=" + configuredInset + "\r\nhoverGraceMs=250\r\nscanIntervalMs=500\r\nlanguage=vi\r\nbrowsers=" + BrowserCatalog.Token(_kind) + "\r\n");
 
                 ScanResult scan = null;
                 try
@@ -416,7 +434,7 @@ namespace Xtension.Tests
                 // A corrupted settings file must fall back to the documented defaults instead of failing to start.
                 Kill(app);
                 Thread.Sleep(500);
-                File.WriteAllText(settingsPath, "overlayEnabled=maybe\r\nvisibilityMode=sideways\r\nbuttonSize=not-a-number\r\nhoverGraceMs=999999\r\n");
+                File.WriteAllText(settingsPath, "overlayEnabled=maybe\r\nvisibilityMode=sideways\r\nbuttonSize=not-a-number\r\nhoverGraceMs=999999\r\nbrowsers=" + BrowserCatalog.Token(_kind) + "\r\n");
                 app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
                 SetForegroundWindow(brave);
                 ScanResult fallback = null;
@@ -493,8 +511,7 @@ namespace Xtension.Tests
             }
             catch (AssertionFailure)
             {
-                Console.WriteLine("INFO latency " + label + " skipped: the × stayed visible with the pointer away");
-                return;
+                throw new AssertionFailure("Latency measurement requires the hover button to hide with the pointer away");
             }
             Stopwatch watch = Stopwatch.StartNew();
             SetCursorPos(tab.Left + tab.Width / 2, tab.Top + tab.Height / 2);
@@ -516,7 +533,7 @@ namespace Xtension.Tests
                 Stopwatch watch = Stopwatch.StartNew();
                 ScanResult result = UiaTabScanner.Scan(brave, size, inset);
                 watch.Stop();
-                if (result.Outcome != ScanOutcome.Ready) return;
+                Assert.AreEqual(ScanOutcome.Ready, result.Outcome, "every latency sample must confirm a selected tab");
                 samples.Add(watch.ElapsedMilliseconds);
             }
             samples.Sort();

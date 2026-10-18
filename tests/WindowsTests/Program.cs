@@ -43,6 +43,33 @@ namespace Xtension.Tests
         }
 
         [Test]
+        public static void ControllerSettingsSnapshotMatchesAppliedValuesAndIsIsolated()
+        {
+            using (Control invoker = new Control())
+            using (CloseButtonOverlay overlay = new CloseButtonOverlay())
+            {
+                invoker.CreateControl();
+                AppSettings initial = AppSettings.Defaults();
+                using (ActiveTabController controller = new ActiveTabController(overlay, invoker, initial))
+                {
+                    initial.ButtonSizeLogical = 19;
+                    Assert.AreEqual(AppInfo.DefaultButtonSizeLogical, controller.Settings.ButtonSizeLogical, "constructor copies ownership");
+                    AppSettings changed = AppSettings.Defaults();
+                    changed.Language = AppLanguage.English;
+                    changed.ButtonColor = OverlayColor.Red;
+                    changed.ButtonBorder = false;
+                    changed.ButtonOpacityPercent = 55;
+                    changed.OverlayEnabled = false;
+                    controller.ApplySettings(changed);
+                    Assert.IsTrue(controller.GetSnapshot().Settings.Matches(changed), "all applied fields reach diagnostics");
+                    AppSettings exposed = controller.Settings;
+                    exposed.ButtonSizeLogical = 18;
+                    Assert.AreEqual(AppInfo.DefaultButtonSizeLogical, controller.Settings.ButtonSizeLogical, "getter cannot mutate owner");
+                }
+            }
+        }
+
+        [Test]
         public static void ExplicitCacheNavigationAndScannerOnRealWindowsUia()
         {
             string eventName = @"Local\Xtension.TestReady." + Guid.NewGuid().ToString("N");

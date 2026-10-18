@@ -313,7 +313,7 @@ namespace Xtension
 
         /// <summary>
         /// Writes a validated import into the store, preserving the values of keys this version does not know.
-        /// A failed write restores the previous file content, so the user never ends up with a partial configuration.
+        /// The store commits cache and file atomically; a failed write leaves both unchanged.
         /// </summary>
         public static bool ApplyToStore(SettingsStore store, BackupImportResult outcome, out string failure)
         {
@@ -321,19 +321,6 @@ namespace Xtension
             if (store == null || outcome == null || !outcome.Accepted || outcome.Settings == null)
             {
                 failure = "nothing to apply";
-                return false;
-            }
-
-            string previousText = null;
-            bool hadFile = false;
-            try
-            {
-                hadFile = File.Exists(store.FilePath);
-                if (hadFile) previousText = File.ReadAllText(store.FilePath, Encoding.UTF8);
-            }
-            catch (Exception ex)
-            {
-                failure = "the current settings file could not be read: " + ex.GetType().Name;
                 return false;
             }
 
@@ -368,24 +355,9 @@ namespace Xtension
             catch (Exception ex)
             {
                 failure = "the backup could not be written: " + ex.GetType().Name;
-                Restore(store, hadFile, previousText);
                 return false;
             }
         }
 
-        /// <summary>Puts the previous file content back and drops the cached values, so a failed import changes nothing.</summary>
-        private static void Restore(SettingsStore store, bool hadFile, string previousText)
-        {
-            try
-            {
-                if (hadFile && previousText != null) File.WriteAllText(store.FilePath, previousText, new UTF8Encoding(false));
-                else if (!hadFile && File.Exists(store.FilePath)) File.Delete(store.FilePath);
-                store.Reload();
-            }
-            catch (Exception ex)
-            {
-                AppLog.WarnThrottled("backup-restore", "The previous settings could not be restored: " + ex.GetType().Name);
-            }
-        }
     }
 }

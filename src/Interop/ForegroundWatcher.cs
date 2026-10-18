@@ -75,6 +75,7 @@ namespace Xtension
         private void OnWinEvent(IntPtr hook, uint eventId, IntPtr hwnd, int objectId, int childId, uint threadId, uint time)
         {
             if (_disposed) return;
+            if (eventId != EventSystemForeground && eventId != EventSystemMinimizeStart && eventId != EventSystemMinimizeEnd) return;
             if (eventId == EventSystemForeground && hwnd == IntPtr.Zero) return;
             Action handler = Changed;
             if (handler == null) return;

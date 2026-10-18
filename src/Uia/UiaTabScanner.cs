@@ -53,7 +53,7 @@ namespace Xtension
         /// </summary>
         public static ScanResult Scan(IntPtr window, BrowserDescriptor descriptor, int sizeLogical, int insetLogical)
         {
-            if (descriptor == null || !BrowserCatalog.IsImplemented(descriptor.Contract))
+            if (descriptor == null || !descriptor.ScannerImplemented || !BrowserCatalog.IsImplemented(descriptor.Contract))
             {
                 ScanResult refused = ScanResult.Idle(window, ScanOutcome.ContractUnimplemented,
                     ScanMessageKey.BrowserUnimplemented);
@@ -96,7 +96,7 @@ namespace Xtension
                         result.ElapsedMs = total.ElapsedMilliseconds;
                         return result;
                     }
-                    Visit(root, 0, state);
+                    Visit(root, 0, false, state);
                 }
             }
             catch (ElementNotAvailableException ex)
@@ -140,7 +140,7 @@ namespace Xtension
             return cache;
         }
 
-        private static void Visit(AutomationElement element, int depth, WalkState state)
+        private static void Visit(AutomationElement element, int depth, bool parentIsTabList, WalkState state)
         {
             if (state.Incomplete) return;
             if (state.Nodes >= AppInfo.ScanMaxNodes || state.Watch.ElapsedMilliseconds > AppInfo.ScanTimeBudgetMs)
@@ -154,6 +154,9 @@ namespace Xtension
             ControlType type = element.Cached.ControlType;
             if (type == ControlType.TabItem)
             {
+                // Chromium exposes strip tabs as direct children of a UIA Tab (ARIA tablist). A TabItem elsewhere
+                // is not evidence of a browser tab. Do not guess if a provider changes this parent contract.
+                if (!parentIsTabList) state.Incomplete = true;
                 state.Result.Tabs.Add(ReadTab(element, depth, state));
                 return;
             }
@@ -174,7 +177,7 @@ namespace Xtension
                     state.Incomplete = true;
                     return;
                 }
-                Visit(child, depth + 1, state);
+                Visit(child, depth + 1, type == ControlType.Tab, state);
                 if (state.Incomplete) return;
                 siblings++;
                 state.Operation = "TreeWalker.GetNextSibling(cache)";
@@ -198,6 +201,9 @@ namespace Xtension
             TabInfo tab = new TabInfo();
             state.Operation = "Cached.Name";
             tab.Name = element.Cached.Name ?? string.Empty;
+            state.Operation = "GetRuntimeId";
+            tab.RuntimeId = element.GetRuntimeId();
+            if (tab.RuntimeId == null || tab.RuntimeId.Length == 0) state.Incomplete = true;
             state.Operation = "Cached.BoundingRectangle";
             tab.Bounds = ToRectangle(element.Cached.BoundingRectangle);
             state.Operation = "Cached.IsOffscreen";

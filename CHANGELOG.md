@@ -2,6 +2,21 @@
 
 All notable changes are listed here. Versions follow SemVer. The version in `VERSION` is the single source.
 
+## [0.1.0-dev5] - 2026-10-18
+
+Candidate under verification; not yet published. Windows x86/x64, .NET Framework 4.8, C# 5.
+
+- Bind close validation to the displayed tab's UIA runtime identity, not only its coordinates. Missing or changed identity refuses closing, including replacement at identical geometry.
+- Require Chromium tab items to be children of the UIA tab list; unimplemented catalog entries refuse at the scanner boundary too.
+- Make settings writes transactional across disk and cache. Failed writes/invalid batches cannot leak into later saves; reject line injection and oversized output.
+- Keep controller snapshots isolated and synchronize appearance/language/enabled values through the established settings path.
+- Marshal scan-trigger state onto the UI thread, ignore unrelated system events and include close-lane timing in diagnostics.
+- Candidate Chrome/Edge opt-in providers and six real-browser architecture jobs. Support acceptance is pending; no new published support claim yet. Existing installations remain Brave-only.
+- Use the published dev4 EXE, checksum-verified on the Windows runner, for the resource baseline. Do not silently skip failed latency samples.
+- Owner reports historical audio distortion is no longer observed; no causal fix claimed and sound-free notices are retained.
+
+See `docs/DEV5_AUDIT.md` for evidence, acceptance state and remaining risks.
+
 ## [0.1.0-dev4] - 2026-10-16
 
 Prerelease. Windows x86/x64, .NET Framework 4.8, C# 5. No runtime dependency added. No published tag, release or asset
