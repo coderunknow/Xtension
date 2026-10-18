@@ -44,6 +44,31 @@ namespace Xtension.Tests
         }
 
         [Test]
+        public static void StartupEvidenceReaderSharesLiveWriterAndExcludesPriorRun()
+        {
+            string path = System.IO.Path.GetTempFileName();
+            try
+            {
+                byte[] prior = System.Text.Encoding.UTF8.GetBytes("INFO previous started. Overlay enabled\r\n");
+                using (System.IO.FileStream writer = new System.IO.FileStream(path, System.IO.FileMode.Create,
+                    System.IO.FileAccess.Write, System.IO.FileShare.Read))
+                {
+                    writer.Write(prior, 0, prior.Length);
+                    writer.Flush();
+                    Assert.IsTrue(BraveAcceptance.ReadStartupLine(path, 0).Contains("previous"), "shared reader works while real-style writer holds file open");
+                    Assert.IsTrue(BraveAcceptance.ReadStartupLine(path, prior.Length) == null, "old run cannot satisfy current evidence");
+                    byte[] current = System.Text.Encoding.UTF8.GetBytes("INFO current started. Overlay enabled\r\n");
+                    writer.Write(current, 0, current.Length);
+                    writer.Flush();
+                    Assert.IsTrue(BraveAcceptance.ReadStartupLine(path, prior.Length).Contains("current"), "only appended current-run marker is accepted");
+                }
+                System.IO.File.WriteAllText(path, "INFO rotated started. Overlay enabled\r\n");
+                Assert.IsTrue(BraveAcceptance.ReadStartupLine(path, 10000).Contains("rotated"), "rotation uses current file from zero");
+            }
+            finally { System.IO.File.Delete(path); }
+        }
+
+        [Test]
         public static void TrayContextShutsDownOwnedResourcesWithoutRegistryWrites()
         {
             string directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "Xtension-lifecycle-" + Guid.NewGuid().ToString("N"));

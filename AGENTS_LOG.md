@@ -558,3 +558,7 @@ Corrected an audit wording error before finalization: prior 101-core-test runs w
 ## 2026-10-18 — normal merge and pre-tag permission hardening
 
 PR #6 merged normally at e10de7969531c78a2260b74954bf1190794aee8b; final head d53dafe5f186928d26b0dc508463469f9d01c480 CI 39109650977 succeeded, all 12 jobs, including four 101-core-test invocations targeting both arches/two hosts. Main CI 39110242291 started; tag absent. Local fixed session branch fast-forwarded to merged main without switching branches. A narrow follow-up explicitly gives only release verify-tag `actions: read` for its workflow-run API dependency. No permission failure is claimed observed on this public repo. This will undergo another PR/head/main verification before tag creation; no product behavior or safety gate changes.
+
+## 2026-10-18 — merged-main startup evidence failure retained
+
+PR #7 merged normally at f32c38c72c8cf35366d50e1a155a6a1ff51022d8 after exact-head run 39110556623 passed all 12 jobs. Merged-main run 39111051166 FAILED in Chrome x64 at one-shot startup-log read, after its overlay appeared. All other jobs passed. No tag/release was created. Correcting shared log reading and current-launch offset binding with a deterministic live-writer regression; no product behavior/close deadline/safety assertion is weakened. The precise observed fact is “reader returned no marker”; contention is source-supported and the regression tests the mode conflict, not a claim to have captured the failed runner's OS error. New PR/head/main gates are required, not a blind rerun.

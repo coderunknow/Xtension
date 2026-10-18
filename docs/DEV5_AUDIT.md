@@ -222,3 +222,17 @@ wording/docs changes require another exact-head PR CI. Its result, normal merge 
 release workflow and downloaded release-byte hashes are recorded on [PR #6](https://github.com/coderunknow/Xtension/pull/6)
 and in the final delivery report to avoid claiming a future result or a self-referential commit hash. D5-13's publication
 workflow implementation is not end-to-end accepted until that release actually completes. No old tag/asset is replaced.
+
+## Post-merge gate finding (publication withheld)
+
+| ID | Severity | Evidence / root cause | Remediation / regression | Status |
+| --- | --- | --- | --- | --- |
+| D5-18 | Medium, harness reliability | Merged-main run 39111051166 on f32c38c failed only Chrome x64 at required startup evidence, after overlay placement. One-shot File.ReadAllLines uses FileShare.Read and returns null after caught IOException; that mode conflicts with a concurrent append writer. The failed runner's exact OS error was not captured. | shared read/write/delete access, bounded wait for the still-required startup marker, pre-launch offset to exclude old fixtures; deterministic live-writer/current-marker/rotation Windows regression | Fixed in test source via PR #8; must pass new exact-head/main CI before tagging. Product code/safety deadlines unchanged. |
+
+[PR #7](https://github.com/coderunknow/Xtension/pull/7) explicitly declares read-only Actions access for the exact-main
+release-gate API dependency (not an observed permission failure); its head CI 39110556623 passed, then it merged
+normally. The next merged-main run caught D5-18, so **no tag/release was created** and a blind retry was not used.
+[PR #8](https://github.com/coderunknow/Xtension/pull/8) adds the reader correction/regression; all earlier failures remain
+in the append-only logs. It adds one synthetic Windows test (20 total if that full run passes). Latest local source/API
+mirrors pass (92 types, 202 strings, 806 locals), still not local Windows execution. Final PR/main/release outcomes and
+asset hashes are published in PR comments and the delivery report, not presumed by this pre-publication record.

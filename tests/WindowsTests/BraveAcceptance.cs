@@ -13,6 +13,7 @@ namespace Xtension.Tests
     internal static class BraveAcceptance
     {
         private static BrowserKind _kind;
+        private static long _startupLogOffset;
         private delegate bool WindowCallback(IntPtr hwnd, IntPtr state);
         [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr state);
         [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
@@ -86,7 +87,7 @@ namespace Xtension.Tests
                         Assert.AreEqual(0, refused.NodesVisited, "no UIA tree walked for unsupported browser");
                         Assert.IsTrue(refused.SelectedHorizontalTab == null, "no selectable close target");
                         File.WriteAllText(AppPaths.SettingsFile, "browsers=" + descriptor.Token + "\r\n");
-                        app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
+                        app = StartCandidate(candidatePath);
                         SetForegroundWindow(window);
                         Stopwatch observe = Stopwatch.StartNew();
                         while (observe.ElapsedMilliseconds < 3500)
@@ -140,7 +141,7 @@ namespace Xtension.Tests
                     if (_kind != BrowserKind.Brave)
                     {
                         File.WriteAllText(AppPaths.SettingsFile, "browsers=brave\r\n");
-                        app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
+                        app = StartCandidate(candidatePath);
                         SetForegroundWindow(brave);
                         Thread.Sleep(2500);
                         Assert.IsTrue(FindVisibleWindow(app.Id, true) == IntPtr.Zero, "disabled browser has no overlay");
@@ -149,7 +150,7 @@ namespace Xtension.Tests
                         Console.WriteLine("PASS Brave-only settings refuse the new browser before opt in");
                     }
                     File.WriteAllText(AppPaths.SettingsFile, "browsers=" + BrowserCatalog.Token(_kind) + "\r\n");
-                    app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
+                    app = StartCandidate(candidatePath);
                     SetForegroundWindow(brave);
                     IntPtr overlay = IntPtr.Zero;
                     Wait(delegate { overlay = FindVisibleWindow(app.Id, true); return overlay != IntPtr.Zero; }, 10000, "candidate overlay did not appear");
@@ -157,8 +158,9 @@ namespace Xtension.Tests
                     Console.WriteLine("PASS shipped candidate EXE displays overlay without taking Brave foreground");
                     // The icon evidence comes from the running shipped EXE, not from the sources: its startup line
                     // states how many frames the embedded resource has and where the tray icon came from.
-                    string started = LastStartupLine();
-                    Assert.IsTrue(started != null, "the shipped EXE wrote its startup line");
+                    string started = null;
+                    Wait(delegate { started = LastStartupLine(); return started != null; }, 5000,
+                        "the shipped EXE wrote its current startup line");
                     Assert.IsTrue(started.Contains("Icon: frames=9"), "the shipped EXE carries the nine-frame icon resource: " + started);
                     Assert.IsTrue(started.Contains("tray source=embedded"), "the shipped EXE uses the embedded icon for the tray: " + started);
                     // The expected token comes from the product's own formatter, so the assertion cannot pass on a
@@ -422,7 +424,7 @@ namespace Xtension.Tests
                 Point page = new Point(braveBounds.Left + braveBounds.Width / 2, braveBounds.Top + braveBounds.Height - 60);
                 SetCursorPos(page.X, page.Y);
 
-                app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
+                app = StartCandidate(candidatePath);
                 SetForegroundWindow(brave);
                 Thread.Sleep(2500);
                 Assert.IsTrue(FindVisibleWindow(app.Id, true) == IntPtr.Zero,
@@ -477,7 +479,7 @@ namespace Xtension.Tests
                 // Restart the application while Brave stays open: the persisted settings must be applied again.
                 Kill(app);
                 Thread.Sleep(500);
-                app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
+                app = StartCandidate(candidatePath);
                 SetForegroundWindow(brave);
                 ScanResult restarted = null;
                 try
@@ -505,7 +507,7 @@ namespace Xtension.Tests
                 Kill(app);
                 Thread.Sleep(500);
                 File.WriteAllText(settingsPath, "overlayEnabled=maybe\r\nvisibilityMode=sideways\r\nbuttonSize=not-a-number\r\nhoverGraceMs=999999\r\nbrowsers=" + BrowserCatalog.Token(_kind) + "\r\n");
-                app = Process.Start(new ProcessStartInfo(candidatePath) { UseShellExecute = false });
+                app = StartCandidate(candidatePath);
                 SetForegroundWindow(brave);
                 ScanResult fallback = null;
                 Wait(delegate
@@ -546,23 +548,40 @@ namespace Xtension.Tests
         /// The most recent startup line of the real application, which states the version, the effective settings, the
         /// icon frame count and the tray icon source. Counts and settings only; no title or URL is involved.
         /// </summary>
+        private static Process StartCandidate(string path)
+        {
+            _startupLogOffset = File.Exists(AppPaths.LogFile) ? new FileInfo(AppPaths.LogFile).Length : 0;
+            return Process.Start(new ProcessStartInfo(path) { UseShellExecute = false });
+        }
+
         private static string LastStartupLine()
+        {
+            return ReadStartupLine(AppPaths.LogFile, _startupLogOffset);
+        }
+
+        internal static string ReadStartupLine(string path, long offset)
         {
             try
             {
-                if (!File.Exists(AppPaths.LogFile)) return null;
-                string[] lines = File.ReadAllLines(AppPaths.LogFile);
-                for (int index = lines.Length - 1; index >= 0; index--)
+                if (!File.Exists(path)) return null;
+                using (FileStream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
                 {
-                    if (lines[index].Contains(" started. Overlay ")) return lines[index];
+                    if (stream.Length > 2L * AppInfo.LogRotationBytes) return null;
+                    // If rotation happened since launch, the current file starts at zero. Otherwise do not let a
+                    // previous fixture startup stand in for the current process's required evidence.
+                    stream.Seek(stream.Length < offset ? 0 : offset, SeekOrigin.Begin);
+                    using (StreamReader reader = new StreamReader(stream, System.Text.Encoding.UTF8, true))
+                    {
+                        string latest = null;
+                        string line;
+                        while ((line = reader.ReadLine()) != null)
+                            if (line.Contains(" started. Overlay ")) latest = line;
+                        return latest;
+                    }
                 }
             }
-            catch (IOException)
-            {
-            }
-            catch (UnauthorizedAccessException)
-            {
-            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
             return null;
         }
 
