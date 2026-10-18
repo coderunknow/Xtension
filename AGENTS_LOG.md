@@ -512,3 +512,7 @@ Implemented audit D5-01–08 and regression tests; changed VERSION only for vers
 ## 2026-10-18 — CI round one and additional regressions
 
 Run 39106016202 failed core suite (97 passed, 1 failed): BackupTests still considered Chrome unsupported. Invalid provider fixture changed to Firefox without removing assertions. Added held-press cancellation on identity/placement change, settings backup future-key round trip, three-repeat alternating performance protocol and independent dev4 hash/version/source check. Added 24-switch real-browser stress preserving the full tab set. Windows GUI/build evidence remains pending; no browser is promoted to verified yet.
+
+## 2026-10-18 — audit continuation
+
+Added D5-10–13, held-press and UIA re-subscription coverage, fixed import result visibility, documented platform feasibility with primary protocol sources, and strengthened release main-CI/release-byte browser gates. Run 39106247860 has actual core/static/MSBuild/x86/x64/package success and both Brave acceptance jobs green at this point; Chrome/Edge/performance still running, so no whole-run pass claimed. Source aids pass after new changes; fresh exact-head CI is required.

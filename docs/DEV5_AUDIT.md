@@ -24,3 +24,21 @@ Brave retains baseline acceptance only until new run. Chrome/Edge candidate cont
 ## Verification
 
 Local tools/api-check.py and tools/verify-source.py pass (aids, not compilation). Actual scripts, x86/x64 builds, synthetic Windows harness, package provenance, performance and real-browser acceptance are pending Windows CI. Direct local dev4 asset download failed at disallowed release-assets host; no local hash is claimed. CI must verify it before execution. No tag or release created.
+
+## Additional trace findings
+
+| ID | Severity | Evidence / root cause / reproduction | Remediation and regression | Status / residual risk |
+| --- | --- | --- | --- | --- |
+| D5-10 | High | overlay `_armed` survived real moves, and same-bounds identity replacement was not a mouse gesture boundary; mouse-down on A then target changes before mouse-up could click B | cancel press on placement or displayed-identity change; copy actual displayed identity before hiding; synthetic down/change/up versus normal click | Fixed; pending new CI; input after fresh validation still has unavoidable OS scheduling race |
+| D5-11 | Medium | `TabSelectionWatcher.Unregister` cleared root/flag but retained `_registered`; A → zero → A skipped Register forever | reset registered HWND on unsubscribe, handle disposed wake safely; actual synthetic UIA subscribe/unsubscribe/resubscribe regression | Fixed; pending CI; a genuinely hung registration remains a bounded abandoned background thread, not forcibly aborted |
+| D5-12 | Medium | `SettingsForm.ImportBackup` set result text, then LoadFromHost/RefreshStatus overwrote it with visibility mode | refresh first and show actual import result last; test through the same internal non-dialog method the file dialog calls | Fixed; pending CI; no redesign |
+| D5-13 | Medium | release workflow previously allowed any version-matching prerelease tag without successful exact-commit main CI, and rebuilt EXEs without real-browser release-byte acceptance | tag gate requires current merged main SHA and successful push CI for that SHA; six release browser jobs use exact artifacts that publish packages | Implemented, end-to-end pending; no old tags/assets altered |
+
+## Feature ranking and platform decision
+
+1. Opt-in Chrome/Edge: high value for existing workflow, moderate provider maintenance, no new runtime dependency; acceptance is actual isolated-profile EXE placement, exact single-tab close, disabled/modifier refusal and lifecycle on both architectures. In progress, not yet verified.
+2. Complete future-key backups: concrete gap in dev4 export, small bounded core implementation. Export includes unknown store keys except schema metadata; round-trip regression exercises export/parse/apply. Implemented, CI pending. Backups contain configuration, including user-authored unknown values; inspect before sharing.
+3. Global shortcuts: deferred, little repository evidence, input/focus conflicts and unnecessary hooks.
+4. New platform host: deferred, high scope/risk and no native GUI acceptance environment.
+
+macOS and Linux X11/Wayland remain unsupported. See [platform feasibility](PLATFORM_FEASIBILITY.md) for native accessibility/overlay/input boundaries, alternatives, relative costs and real-browser/permissions/packaging gates. No fake port or placeholder artifact is delivered.

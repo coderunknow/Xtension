@@ -149,7 +149,7 @@ def main():
     # optimistic sentence fails this check instead of shipping as an unverified claim.
     negative = ('not supported', 'unsupported', 'blocked', 'not implemented', 'not verified', 'cannot', 'no ',
                 'nothing', 'would ', 'plan', 'limit', 'deferred', 'without')
-    for name in ('README.md', 'CHANGELOG.md', 'docs/RELEASE_CAPABILITIES.md', 'docs/DEV3_AUDIT.md', 'docs/DEV4_AUDIT.md'):
+    for name in ('README.md', 'CHANGELOG.md', 'docs/RELEASE_CAPABILITIES.md', 'docs/DEV3_AUDIT.md', 'docs/DEV4_AUDIT.md', 'docs/DEV5_AUDIT.md', 'docs/PLATFORM_FEASIBILITY.md'):
         path = ROOT / name
         if not path.is_file():
             continue

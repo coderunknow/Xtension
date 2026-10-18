@@ -43,6 +43,40 @@ namespace Xtension.Tests
         }
 
         [Test]
+        public static void SelectionWatcherResubscribesAfterReturningToSameWindow()
+        {
+            using (Form fixture = new Form())
+            using (TabControl tabs = new TabControl())
+            {
+                tabs.TabPages.Add("Synthetic");
+                fixture.Controls.Add(tabs);
+                fixture.Show();
+                using (TabSelectionWatcher watcher = new TabSelectionWatcher(delegate { }))
+                {
+                    watcher.SetTarget(fixture.Handle);
+                    PumpUntil(delegate { return watcher.Snapshot().Registered; }, "first subscription");
+                    long first = watcher.Snapshot().Registrations;
+                    watcher.SetTarget(IntPtr.Zero);
+                    PumpUntil(delegate { return !watcher.Snapshot().Registered; }, "unsubscription");
+                    watcher.SetTarget(fixture.Handle);
+                    PumpUntil(delegate { return watcher.Snapshot().Registered && watcher.Snapshot().Registrations > first; }, "return to same HWND must resubscribe");
+                }
+            }
+        }
+
+        private static void PumpUntil(Func<bool> condition, string reason)
+        {
+            Stopwatch watch = Stopwatch.StartNew();
+            while (watch.ElapsedMilliseconds < 10000)
+            {
+                Application.DoEvents();
+                if (condition()) return;
+                Thread.Sleep(20);
+            }
+            Assert.IsTrue(false, reason);
+        }
+
+        [Test]
         public static void OverlayPressCannotSurviveTargetOrGeometryChange()
         {
             using (CloseButtonOverlay overlay = new CloseButtonOverlay())
@@ -838,6 +872,10 @@ namespace Xtension.Tests
                         string exported = host.ExportSettings(file);
                         Assert.IsTrue(exported == "exported", "the host reports a successful export: " + exported);
                         Assert.IsTrue(System.IO.File.Exists(file), "the backup file exists");
+                        form.ImportBackupFile(file);
+                        System.Reflection.FieldInfo statusField = typeof(SettingsForm).GetField("_status", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        Label status = (Label)statusField.GetValue(form);
+                        Assert.IsTrue(status.Text.StartsWith("imported ", StringComparison.Ordinal), "import outcome survives values/language refresh");
 
                         AppSettings other = AppSettings.Defaults();
                         other.ScanIntervalMs = AppInfo.MinScanIntervalMs;
