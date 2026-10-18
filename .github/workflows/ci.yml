@@ -39,6 +39,7 @@ jobs:
         run: |
           ./scripts/verify-source.ps1
           ./scripts/test.ps1
+          ./scripts/test-fixture-process.ps1
 
   build:
     name: Build ${{ matrix.arch }}
@@ -151,6 +152,11 @@ jobs:
             -Baseline ("dist/baseline/Xtension-" + $env:BASELINE_TAG + "-win-x64.exe") `
             -Candidate 'dist/Xtension-win-x64.exe' `
             -BaselineLabel $env:BASELINE_TAG -CandidateLabel 'candidate'
+      - name: Publish complete resource summary
+        shell: powershell
+        run: |
+          $summary = (Get-Content -LiteralPath dist/perf/performance-x64.txt -Raw).Trim().Replace("`r`n", "%0A").Replace("`n", "%0A")
+          Write-Host ("::notice title=Complete resource comparison::" + $summary)
       - name: Upload resource evidence
         uses: actions/upload-artifact@v4
         with:

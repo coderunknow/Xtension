@@ -25,6 +25,14 @@ namespace Xtension
         public long TotalMs;
     }
 
+    internal sealed class LaneTimingSnapshot
+    {
+        public ScanLane Lane;
+        public int Samples;
+        public double ScanP95Ms;
+        public double QueueP95Ms;
+    }
+
     /// <summary>Immutable copy of the counters, so a reader cannot see a half-updated set.</summary>
     internal sealed class ScanMetricsSnapshot
     {
@@ -42,6 +50,7 @@ namespace Xtension
         public long ScanMaxMs;
         public double QueueP95Ms;
         public long Samples;
+        public LaneTimingSnapshot[] Lanes = new LaneTimingSnapshot[0];
         /// <summary>Time from an eligibility-changing event to the × being visible, or -1 when never measured.</summary>
         public long LastEventToVisibleMs = -1;
         public long EventToVisibleP95Ms = -1;
@@ -63,6 +72,12 @@ namespace Xtension
             text.Append(", events=").Append(Events).Append(", samples=").Append(Samples);
             if (EventToVisibleP95Ms >= 0) text.Append(", eventToVisibleMs p95=").Append(EventToVisibleP95Ms);
             if (LastEventToVisibleMs >= 0) text.Append(", lastEventToVisibleMs=").Append(LastEventToVisibleMs);
+            foreach (LaneTimingSnapshot lane in Lanes)
+            {
+                text.Append(", ").Append(lane.Lane).Append(" samples=").Append(lane.Samples)
+                    .Append(" scanP95Ms=").Append(lane.ScanP95Ms.ToString("F1", CultureInfo.InvariantCulture))
+                    .Append(" queueP95Ms=").Append(lane.QueueP95Ms.ToString("F1", CultureInfo.InvariantCulture));
+            }
             return text.ToString();
         }
     }
@@ -92,7 +107,7 @@ namespace Xtension
         private long _eventScanRequests;
         private long _lastEventToVisible = -1;
 
-        /// <summary>Completed non-close scans so far. Cheap enough for the tick path: no allocation, no copy.</summary>
+        /// <summary>Completed scans so far. Cheap enough for the tick path: no allocation, no copy.</summary>
         public long CompletedCount
         {
             get
@@ -178,9 +193,14 @@ namespace Xtension
             List<long> queue = new List<long>();
             List<long> visible = new List<long>();
             ScanMetricsSnapshot metrics = new ScanMetricsSnapshot();
+            List<ScanSample> retained = new List<ScanSample>();
             lock (_gate)
             {
-                for (int index = 0; index < _sampleCount; index++) durations.Add(_samples[index].ScanMs);
+                for (int index = 0; index < _sampleCount; index++)
+                {
+                    retained.Add(_samples[index]);
+                    durations.Add(_samples[index].ScanMs);
+                }
                 for (int index = 0; index < _sampleCount; index++) queue.Add(_samples[index].QueuedMs);
                 for (int index = 0; index < _visibleCount; index++) visible.Add(_eventToVisible[index]);
                 metrics.Requests = _requests;
@@ -203,6 +223,23 @@ namespace Xtension
             metrics.ScanMaxMs = durations.Count == 0 ? 0 : durations[durations.Count - 1];
             metrics.QueueP95Ms = Percentile(queue, 0.95);
             metrics.EventToVisibleP95Ms = visible.Count == 0 ? -1 : (long)Math.Round(Percentile(visible, 0.95));
+            List<LaneTimingSnapshot> lanes = new List<LaneTimingSnapshot>();
+            foreach (ScanLane lane in new ScanLane[] { ScanLane.Overlay, ScanLane.Close, ScanLane.Dashboard })
+            {
+                List<long> laneScans = new List<long>();
+                List<long> laneQueue = new List<long>();
+                foreach (ScanSample sample in retained)
+                {
+                    if (sample.Lane != lane) continue;
+                    laneScans.Add(sample.ScanMs);
+                    laneQueue.Add(sample.QueuedMs);
+                }
+                laneScans.Sort();
+                laneQueue.Sort();
+                lanes.Add(new LaneTimingSnapshot { Lane = lane, Samples = laneScans.Count,
+                    ScanP95Ms = Percentile(laneScans, 0.95), QueueP95Ms = Percentile(laneQueue, 0.95) });
+            }
+            metrics.Lanes = lanes.ToArray();
             return metrics;
         }
 

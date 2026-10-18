@@ -42,3 +42,68 @@ Local tools/api-check.py and tools/verify-source.py pass (aids, not compilation)
 4. New platform host: deferred, high scope/risk and no native GUI acceptance environment.
 
 macOS and Linux X11/Wayland remain unsupported. See [platform feasibility](PLATFORM_FEASIBILITY.md) for native accessibility/overlay/input boundaries, alternatives, relative costs and real-browser/permissions/packaging gates. No fake port or placeholder artifact is delivered.
+
+| D5-14 | Low | `ScanMetrics` retained lane tags but exposed aggregate percentiles only; the old lane test checked enum distinctness rather than separation | expose retained sample counts/scan and queue p95 for each lane; regression uses deliberately different lane durations and checks the rendered report | Implemented, pending CI; counts are bounded-window samples, lifetime request/refusal/error counters remain aggregate |
+| D5-15 | Low | rejected-backup text promised current values although Parse deliberately starts from defaults; backup text promised no arbitrary content despite preserved unknown settings | bilingual text now states documented defaults and advises inspecting custom values before sharing; current docs describe INI/clamping rather than JSON/defaulting all numbers | Implemented; string consistency gates pending |
+
+## Repository coverage and unchanged controls
+
+- Safety trace: overlay press/release → controller → independent close worker → scanner → TabSelector → CloseGuard →
+  final foreground/modifier/deadline read → SendInput. All original budgets, depth/node/sibling caps, geometry, DPI,
+  epoch, foreground, deadline, stale-result and cooldown conditions retained. Runtime identity is an additional gate.
+- UIA: explicit cached navigation remains correct; CacheRequest activation is disposed, not the nondisposable request.
+  Documents/Edit/Text/Image/Button/ScrollBar are leaves, not page-content traversal. Selection ambiguity and unknown
+  state refuse. No attempt to abort a native provider call or accumulate replacement threads.
+- Concurrency/lifecycle: three bounded scan lanes, one pending/running per worker, MTA UIA threads, bounded shutdown
+  joins and background-thread exit; registration remains best effort. UI-thread-only event state is now enforced.
+  Process identity is PID-aware and the close path queries it uncached. Single-instance mutex failure remains closed.
+- Settings/UI: Normalize/range constants and single host path retained; all values appear in diagnostics snapshots.
+  Unknown keys preserved; invalid batches and failed writes leave cache/disk committed. Output format cannot inject
+  another line; maximum written file size is enforced. Read errors and oversized files still fall back with warning.
+  A racing external settings editor and file growth between stat/read are not fully guarded; local settings are not
+  a security boundary against another process running as the user. Import outcome visibility was a verified UI defect;
+  no speculative layout or icon redesign was done.
+- Resource/privacy: fixed-size timing buffers, bounded rotated log, idempotent overlay placement, throttle warnings,
+  disposable native handles/brushes/fonts and no titles/URLs/provider exception messages in persistent diagnostics.
+  Per-lane samples are now actually reported. No measured speedup claimed. Readiness marker is tray construction,
+  not first-overlay readiness; real hover latency is measured separately.
+- Build/release: explicit compile lists, VERSION generation, architecture/version/commit/dirty/hash provenance,
+  source git archive, negative packaging cases, MIT unchanged and ASCII scripts retained. Framework csc output is
+  provenance-reproducible, not claimed byte-for-byte deterministic (timestamps/toolchain can differ). Existing tags,
+  published releases and assets remain unchanged. Optional review apps are not repository CI and have no assumed result.
+
+## Remaining environment gates
+
+Physical multi-monitor/mixed DPI, native x86 Windows (not merely x86 process on x64), pinned/vertical/scrolled layouts,
+true hung-provider recovery, real tray shell/startup registry/graceful shutdown integration and human visual/icon review
+remain incompletely verified. These are disclosed prerelease limitations, not waived safety checks. The owner no longer
+observes the audio symptom; no reproduced root cause or new audio regression is claimed.
+
+### Intermediate performance evidence (not final candidate)
+
+Run [39106587826](https://github.com/coderunknow/Xtension/actions/runs/39106587826), commit `802b203`, performance
+job `117613979110` succeeded. Baseline executable independently matched SHA-256
+`35b5a67b2c416666b61d43dc1451e8e17c49c081c65226ec5e8cea407c6cce82`, source `15900f524951b14ec7658e2ddadf07166f10ed3a`,
+product version `0.1.0-dev4`. These hashes were computed in Windows CI, not locally. Intermediate first repetition,
+x64 process on Windows 10.0.26100.0, pinned Brave, equivalent fresh three-blank-tab profiles, default configuration:
+
+| State / binary | Ready ms | CPU % of one core | Working/private MiB | Handles | Sample seconds | Scan p50/p90 ms |
+| --- | ---: | ---: | --- | ---: | ---: | --- |
+| idle / dev4 | 326 | 0.00 | 33.6 / 25.0 | 325 | 20.3 | n/a |
+| idle / candidate | 205 | 0.00 | 33.6 / 25.0 | 325 | 20.1 | n/a |
+| foreground / dev4 | 217 | 2.74 | 53.4 / 37.8 | 420 | 20.6 | 73.9 / 85.3 |
+| foreground / candidate | 207 | 2.88 | 53.3 / 37.7 | 420 | 20.6 | 80.9 / 91.1 |
+
+Candidate product counters at the last statistics line: 25 completed, zero refused/stale/discarded/errors/stalls,
+scan p50/p95/max 78/99/108 ms, queue p95 0 ms; baseline 26 completed, zero failures, 72/86/160 ms and queue p95 0 ms.
+Pointer was not moved; events/event-to-visible unmeasured, not zero latency. Three repetitions ran, but GitHub caps
+annotations per step and only the first observations were retrievable here; complete raw report is the run's
+`performance-evidence` artifact. Add a separate single full-report annotation for subsequent runs. No measured
+speedup or statistically justified regression threshold is claimed from this partial intermediate evidence.
+
+### New-browser run outcome
+
+Run `39106587826` did **not** pass overall: Chrome and Edge in both architectures hit the unchanged 15-minute job
+limit after signed-fixture verification (Chrome `155.0.8059.40`, Edge `154.0.4258.62`). No real acceptance result was
+retrievable from the synchronous native pipeline. Root cause remains unconfirmed; bounded file-backed fixture I/O
+and phase markers are the next diagnostic/remediation step, not a waiver. Brave and performance jobs succeeded.

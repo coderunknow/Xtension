@@ -21,6 +21,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($env:GITHUB_ACTIONS -ne 'true') { throw 'This measurement is restricted to disposable GitHub Actions runners, not personal desktops.' }
 $root = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'fixture-process.ps1')
 $harness = Join-Path $root "dist\tests\Xtension.WindowsTests-$Arch.exe"
 if (-not (Test-Path -LiteralPath $harness)) { throw "Windows test harness not found: $harness (run scripts/test-windows.ps1 first)." }
 foreach ($name in @('Baseline', 'Candidate')) {
@@ -71,8 +72,9 @@ function Invoke-Measurement {
     if ($BravePath) { $arguments += @($BravePath, $ProfilePath) }
     # The harness reads the log bytes this run appended and prints one MEASURE-LATENCY line; the script only has to
     # record and annotate it, so no second copy of the log offset is kept here.
-    $lines = @(& $harness @arguments 2>&1 | ForEach-Object { "$_" })
-    $code = $LASTEXITCODE
+    $execution = Invoke-FixtureProcess -Executable $harness -Arguments $arguments -OutputPrefix (Join-Path $evidence ($Label + '-' + $Scenario)) -TimeoutSeconds 180
+    $lines = $execution.Lines
+    $code = $execution.ExitCode
     foreach ($line in $lines) {
         if ($line -like 'MEASURE label=*' -or $line -like 'MEASURE-LATENCY label=*') {
             Write-Host $line

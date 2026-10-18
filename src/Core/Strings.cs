@@ -469,7 +469,7 @@ namespace Xtension
             // dev4: settings backup and restore
             new string[] { "Xuất cài đặt…", "Export settings…" },
             new string[] { "Nhập cài đặt…", "Import settings…" },
-            new string[] { "Tệp sao lưu chỉ chứa cài đặt của Xtension (không có nhật ký, tiêu đề tab, địa chỉ trang web hay thông tin máy). Khi nhập, mọi giá trị đều được kiểm tra và điều chỉnh như lúc Xtension đọc tệp cài đặt; nếu ghi thất bại, cấu hình cũ được giữ nguyên.", "A backup file contains only Xtension settings (no log, no tab title, no web address and no machine information). On import every value is validated and bounded exactly as when Xtension reads its own settings file, and if the write fails the previous configuration is kept." },
+            new string[] { "Tệp sao lưu chứa cài đặt Xtension, kể cả khóa lạ. Không tự thu thập nhật ký hay dữ liệu duyệt web; hãy kiểm tra giá trị tùy chỉnh trước khi chia sẻ. Khi nhập, mọi giá trị đều được kiểm tra và điều chỉnh như lúc Xtension đọc tệp cài đặt; nếu ghi thất bại, cấu hình cũ được giữ nguyên.", "A backup contains Xtension settings, including unknown keys. It collects no logs or browsing data; inspect custom values before sharing. On import every value is validated and bounded exactly as when Xtension reads its own settings file, and if the write fails the previous configuration is kept." },
             new string[] { "Xuất cài đặt Xtension", "Export Xtension settings" },
             new string[] { "Nhập cài đặt Xtension", "Import Xtension settings" },
             new string[] { "Tệp cài đặt Xtension (*.ini)|*.ini|Tất cả tệp (*.*)|*.*", "Xtension settings file (*.ini)|*.ini|All files (*.*)|*.*" },
@@ -481,7 +481,7 @@ namespace Xtension
             new string[] { "Tệp sao lưu lớn hơn giới hạn cho phép.", "The backup file is larger than the supported limit." },
             new string[] { "Tệp này không phải là tệp sao lưu cài đặt Xtension.", "This is not an Xtension settings backup file." },
             new string[] { "Tệp sao lưu được tạo bởi phiên bản Xtension mới hơn (phiên bản định dạng {0}); bản này chỉ đọc được định dạng {1}.", "The backup was written by a newer Xtension version (format version {0}); this build can only read format {1}." },
-            new string[] { "Giá trị không đọc được nên đã giữ nguyên giá trị hiện tại: {0}", "Values that could not be read, so the current value was kept: {0}" },
+            new string[] { "Giá trị không đọc được nên đã dùng giá trị mặc định: {0}", "Values that could not be read, so the documented default was used: {0}" },
             new string[] { "Giá trị ngoài phạm vi đã được điều chỉnh về giới hạn: {0}", "Values outside the documented range, adjusted to the limit: {0}" },
             new string[] { "Khóa không thuộc phiên bản này được giữ nguyên: {0}", "Keys this version does not know, preserved: {0}" },
 

@@ -516,3 +516,19 @@ Run 39106016202 failed core suite (97 passed, 1 failed): BackupTests still consi
 ## 2026-10-18 — audit continuation
 
 Added D5-10–13, held-press and UIA re-subscription coverage, fixed import result visibility, documented platform feasibility with primary protocol sources, and strengthened release main-CI/release-byte browser gates. Run 39106247860 has actual core/static/MSBuild/x86/x64/package success and both Brave acceptance jobs green at this point; Chrome/Edge/performance still running, so no whole-run pass claimed. Source aids pass after new changes; fresh exact-head CI is required.
+
+## 2026-10-18 — additional diagnostics/documentation and CI observability
+
+Run 39106247860 was cancelled by the next push before resource/new-browser completion, not passed. Run 39106587826 has green static/core/build/MSBuild/package/Brave results but new browsers and performance still running. No new-browser success claimed. Direct job-log download is also blocked at results-receiver.actions host (EOF).
+
+Completed actual per-lane retained-sample diagnostics (the old “lanes kept apart” test checked only enum inequality); added deliberately distinct durations/queues and rendered-summary assertions. Corrected bilingual rejected-import wording (defaults, not current values) and backup privacy description. Updated current docs without altering historical audit/log entries. Tightened real-browser sample p95 to nearest-rank.
+
+Long new-browser steps prompted a harness I/O investigation: synchronous native pipelines can wait on browser descendants inheriting stdout after the harness exits. This is a plausible harness cause, NOT a reproduced product defect; no live logs are available here. Added bounded fixture execution using shared output files instead of inherited pipes, retained exit/deadline failures and sanitized evidence filtering. Signature verification remains required, now in a bounded job; phase markers will distinguish signature, harness and cleanup delays in the next run. Raw temporary stdout/stderr stay in ignored dist and are not uploaded. No acceptance assertion is removed.
+
+## 2026-10-18 — scope consistency and intermediate measurements
+
+Minimal AGENTS wording generalizes Brave to enabled supported browser on the owner's multi-browser mandate; strengthens exact displayed identity and keeps every original gate. Intermediate performance job 117613979110 succeeded on 802b203 and pinned dev4 source/version/hash. First-repetition numbers are in the audit; additional samples are in the artifact but not all annotations survived GitHub's per-step cap. Added a separate complete-summary annotation step for the next run. No percentage or universal improvement claim. Current Chrome/Edge steps remain outstanding; no release decision yet.
+
+## 2026-10-18 — CI round two outcome (not a pass)
+
+Run 39106587826 on 802b203 completed cancelled: all four new-browser jobs exceeded their unchanged 15-minute job deadlines. Fixture annotations show signature validation completed and exact versions/hashes were recorded (Chrome 155.0.8059.40, Edge 154.0.4258.62); no acceptance output escaped the native harness pipeline. Root cause is not yet proven. Static/core (99 passed), MSBuild, both builds (17 Windows regressions each), packaging, repeated performance and Brave x86/x64 passed. The new bounded file-backed fixture transport is now submitted to reveal actual harness results instead of treating the timeout as flakiness or increasing deadlines. Publication remains blocked.

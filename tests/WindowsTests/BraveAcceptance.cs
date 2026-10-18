@@ -552,7 +552,7 @@ namespace Xtension.Tests
             }
             samples.Sort();
             long p50 = samples[samples.Count / 2];
-            long p95 = samples[(int)((samples.Count - 1) * 0.95)];
+            long p95 = samples[(int)Math.Ceiling(samples.Count * 0.95) - 1];
             Console.WriteLine("INFO latency " + label + " samples=" + samples.Count + " p50Ms=" + p50
                 + " p95Ms=" + p95 + " maxMs=" + samples[samples.Count - 1] + " (harness-side scan of a real browser)");
         }
