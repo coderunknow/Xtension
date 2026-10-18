@@ -450,3 +450,7 @@ Candidate execution transport is bounded independently of browser descendant lif
 ## Entry 024 — scope rule clarification (2026-10-18)
 
 The owner explicitly approved multi-browser expansion. AGENTS.md's Brave-only product/rule wording therefore needs the minimal generalization to “enabled supported browser”, with the new exact runtime-identity requirement added. The foreground requirement itself is not loosened: it must be the very window validated, an implemented provider, and user-enabled. Framework/compiler/platform constraints remain unchanged. This reconciles the contributor instructions with the approved product evolution, rather than leaving a rule that contradicts tested additional providers.
+
+## Entry 025 — Edge contract diagnosis and lifecycle coverage (2026-10-18)
+
+The file-backed runner now returns Chrome success for both architectures; Edge fails on both with post-restart ScanIncomplete (197 nodes, ~168/338 ms). This is not a speed/budget justification: no limit or parent/identity gate is to be loosened. Before changing any provider assumption, add privacy-safe first-incomplete-cause metadata (operation/enum/numbers only, never names) so the failed shape is identifiable. The release remains blocked. Additional Windows regressions exercise repeated context teardown and named-instance signalling; these are synthetic lifecycle checks, not Shell visual/startup acceptance.

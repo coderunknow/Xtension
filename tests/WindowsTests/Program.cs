@@ -43,6 +43,49 @@ namespace Xtension.Tests
         }
 
         [Test]
+        public static void TrayContextShutsDownOwnedResourcesWithoutRegistryWrites()
+        {
+            string directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "Xtension-lifecycle-" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(directory);
+            try
+            {
+                for (int cycle = 0; cycle < 2; cycle++)
+                {
+                    SettingsStore store = new SettingsStore(System.IO.Path.Combine(directory, "settings.ini"));
+                    using (TrayAppContext context = new TrayAppContext(store, AppSettings.Defaults()))
+                    {
+                        System.Reflection.FieldInfo overlayField = typeof(TrayAppContext).GetField("_overlay", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        System.Reflection.FieldInfo invokerField = typeof(TrayAppContext).GetField("_invoker", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        CloseButtonOverlay overlay = (CloseButtonOverlay)overlayField.GetValue(context);
+                        Control invoker = (Control)invokerField.GetValue(context);
+                        Assert.IsFalse(overlay.IsDisposed, "constructed context owns live overlay");
+                        context.ExitThread();
+                        Assert.IsTrue(overlay.IsDisposed, "exit disposes overlay");
+                        Assert.IsTrue(invoker.IsDisposed, "exit disposes marshal control");
+                    }
+                }
+            }
+            finally { System.IO.Directory.Delete(directory, true); }
+        }
+
+        [Test]
+        public static void SingleInstanceRefusesDuplicateAndDeliversDashboardSignal()
+        {
+            using (SingleInstance primary = SingleInstance.Acquire())
+            using (AutoResetEvent delivered = new AutoResetEvent(false))
+            {
+                Assert.IsFalse(primary.Unavailable || primary.IsSecondary, "first instance holds exclusion");
+                using (ShowDashboardListener listener = new ShowDashboardListener(delegate { delivered.Set(); }))
+                using (SingleInstance secondary = SingleInstance.Acquire())
+                {
+                    Assert.IsTrue(secondary.IsSecondary && !secondary.Unavailable, "duplicate cannot create another active application");
+                    Assert.IsTrue(secondary.SignalExisting(), "secondary can signal primary");
+                    Assert.IsTrue(delivered.WaitOne(5000), "primary receives dashboard signal");
+                }
+            }
+        }
+
+        [Test]
         public static void SelectionWatcherResubscribesAfterReturningToSameWindow()
         {
             using (Form fixture = new Form())
