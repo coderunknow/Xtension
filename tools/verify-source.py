@@ -24,6 +24,7 @@ REQUIRED = [
     'scripts/build.ps1', 'scripts/test.ps1', 'scripts/toolchain.ps1', 'scripts/update-version.ps1',
     'scripts/verify-source.ps1', 'scripts/package.ps1', 'scripts/measure-performance.ps1',
     'docs/RELEASE_CAPABILITIES.md', 'docs/DEV3_AUDIT.md', 'docs/DEV4_AUDIT.md',
+    'docs/DEV5_AUDIT.md', 'docs/PLATFORM_FEASIBILITY.md',
     'assets/xtension.ico', 'assets/xtension-256.png', 'tools/generate-icon.py',
     'tests/UnitTests/TestFramework.cs', 'tests/UnitTests/Program.cs',
     '.github/workflows/ci.yml', '.github/workflows/release.yml',

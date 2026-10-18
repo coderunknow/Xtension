@@ -16,7 +16,7 @@ namespace Xtension
         public int AppliedCount;
         /// <summary>Keys whose value was outside its documented range and was clamped to the bound.</summary>
         public List<string> ClampedKeys = new List<string>();
-        /// <summary>Keys whose value could not be parsed. The current value was kept; the file's value was not used.</summary>
+        /// <summary>Keys whose value could not be parsed. The documented default is used; the file's value was not used.</summary>
         public List<string> RejectedKeys = new List<string>();
         /// <summary>Keys this version does not know. They are preserved exactly as the normal settings path preserves them.</summary>
         public List<string> PreservedKeys = new List<string>();
@@ -36,7 +36,8 @@ namespace Xtension
     /// <summary>
     /// Export and import of the Xtension configuration. The format is the settings file itself plus a schema line, so
     /// restoring a backup needs no parser other than the one the application already uses, no dependency, and no
-    /// serialization of anything except settings: no log, no tab title, no URL and no machine information.
+    /// serialization of anything except settings. No browsing data is gathered, but preserved user-authored unknown
+    /// settings can themselves contain private values; backups must be inspected before sharing.
     ///
     /// Import is validate-then-write: nothing is written until the whole document has been parsed and bounded, every
     /// value goes through the same ranges as a normal load, and a failed write restores the previous file content.

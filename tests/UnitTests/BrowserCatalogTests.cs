@@ -120,7 +120,8 @@ namespace Xtension.Tests
             Assert.IsFalse(BrowserCatalog.IsScannerImplemented(BrowserKind.Edge), "shared contract cannot override quarantine");
             Assert.IsFalse(BrowserCatalog.IsEnabled(int.MaxValue, BrowserKind.Edge), "even hostile mask cannot enable Edge");
             Assert.AreEqual(BrowserCatalog.NoBrowsers, BrowserCatalog.ParseMask("edge"), "file cannot opt into failed provider");
-            BackupImportResult imported = SettingsBackup.Parse("browsers=brave,edge\r\n");
+            BackupImportResult imported = SettingsBackup.Parse("schema=1\r\nproduct=Xtension\r\nbrowsers=brave,edge\r\n");
+            Assert.IsTrue(imported.Accepted, "valid backup metadata accepted before inspecting values");
             Assert.AreEqual(BrowserCatalog.Mask(BrowserKind.Brave), imported.Settings.Browsers, "import drops unsupported Edge");
             Assert.AreEqual(2, BrowserCatalog.Offerable().Length, "settings only offers accepted providers");
         }
