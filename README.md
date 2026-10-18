@@ -165,7 +165,7 @@ The version comes only from `VERSION`. Edit that file to change it.
 | Unit tests (pure core) | Run in CI. |
 | x86 and x64 builds | Run in CI. Verified in CI; release builds are produced by the tag workflow. |
 | Windows UIA fixture / scaled-font layout | Run in CI in both architectures; not real-browser or physical-monitor validation. Includes settings-window layout at 100/125/150/200% text scaling, the language toggle, overlay resize and a delivered Ctrl+W chord. |
-| Real browsers | Brave x86/x64 passed on intermediate dev5 commit `802b203` (run `39106587826`); Chrome subsequently passed; Edge failed and is disabled. Final exact-head results belong in the dev5 audit. |
+| Real browsers | Brave and opt-in Chrome passed full packaged-EXE acceptance on x86/x64 (`66da890`, CI `39108878064`); both real-Edge refusal jobs passed. Edge is disabled, not supported. Final PR/main/release gates retest exact source and bytes. |
 | Published dev4 vs candidate resources | Three 20-second observations per binary/state, alternating order on one runner; startup, CPU, working/private memory, handles, scan/queue counters. Raw evidence and limitations in the audit; no percentage speedup claim. |
 | Application icon | Frames/decoding are tested; human visual appearance at scaled tray sizes is **not verified**. |
 | Audio | Owner reports historical distortion is **not currently observed**; causal root cause remains unconfirmed. |

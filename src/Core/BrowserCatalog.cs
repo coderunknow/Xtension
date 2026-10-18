@@ -107,8 +107,8 @@ namespace Xtension
         /// </summary>
         private static readonly string[] AcceptanceEvidence = new string[]
         {
-            "chrome@155.0.8059.40: CI 39108277770, commit 5c97764; isolated signed browser, packaged EXE x86 and x64; placement, exact single close, default-disabled, modifiers, 24-switch preservation, geometry, hover and restart passed",
-            "brave@1.97.56: isolated profile, real window, overlay placed inside the confirmed selected tab on the CI runner (Windows Server 2022, x86 and x64); single close removed the confirmed tab"
+            "chrome@155.0.8059.40: CI 39108878064, commit 66da890; isolated signed browser, packaged EXE x86 and x64; placement, exact single close, default-disabled, modifiers, 24-switch preservation, geometry, hover and restart passed",
+            "brave@155.1.97.56: CI 39108878064, commit 66da890; isolated official pinned browser, packaged EXE x86 and x64 on OS 10.0.26100.0; placement, exact single close, modifiers, 24-switch preservation, geometry, hover and restart passed"
         };
 
         /// <summary>Every browser this build knows about, in a stable order.</summary>

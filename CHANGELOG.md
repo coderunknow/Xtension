@@ -4,7 +4,7 @@ All notable changes are listed here. Versions follow SemVer. The version in `VER
 
 ## [0.1.0-dev5] - 2026-10-18
 
-Candidate under verification; not yet published. Windows x86/x64, .NET Framework 4.8, C# 5.
+Prerelease. Windows x86/x64, .NET Framework 4.8, C# 5. No runtime dependency added.
 
 - Bind close validation to the displayed tab's UIA runtime identity, not only its coordinates. Missing or changed identity refuses closing, including replacement at identical geometry.
 - Require Chromium tab items to be children of the UIA tab list; unimplemented catalog entries refuse at the scanner boundary too.

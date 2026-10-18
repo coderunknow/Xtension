@@ -1,9 +1,9 @@
 # dev5 audit and acceptance record
 
-Date: 2026-10-18. Work in progress; publication is gated, not implied by this document.
+Date: 2026-10-18. Prerelease audit; recorded verification is below. Publication is separately gated, not implied.
 Baseline: main `685975ec088ac28a722e004d6354c9fc1cbd6e63`, dev4 tag `15900f5`.
 
-## Findings recorded before CI
+## Findings (initial status recorded before CI; completed verification in § Final candidate evidence)
 
 | ID | Severity | Evidence and root cause | Impact / reproduction | Remediation and regression | Status / residual risk |
 | --- | --- | --- | --- | --- | --- |
@@ -133,10 +133,90 @@ Additional findings:
 | ID | Severity | Evidence / root cause | Reproduction / remediation | Status |
 | --- | --- | --- | --- | --- |
 | D5-16 | Medium, harness | synchronous native output can retain descendant handles and had no fixture-level deadline | synthetic parent exits 7 while descendant survives; file-backed bounded execution preserves output/code; stalled process refuses at deadline | Regression passed in run 39107697740. Earlier long-job cause remains unproven; do not conflate with a product fix. |
-| D5-17 | Medium, provider availability | Edge's deeper post-restart tree reaches unchanged depth cap | exact signed browser, both EXE architectures, no personal profile; attempted provider withdrawn and scanner disabled | Resolved by unsupported scope, not an implemented Edge solution; actual refusal test pending new CI. |
+| D5-17 | Medium, provider availability | Edge's deeper post-restart tree reaches unchanged depth cap | exact signed browser, both EXE architectures, no personal profile; attempted provider withdrawn and scanner disabled | Resolved by unsupported scope, not an implemented Edge solution; actual refusal subsequently passed in run 39108878064. |
 
 Full 3-repeat resource evidence is uploaded in each performance job. A single full-report annotation was truncated at
 GitHub's additional 4096-character limit in run 39107697740; next iteration splits bounded chunks. No missing third
-repeat is reconstructed. A symmetric five-switch event-to-visible measurement is being added **after**, separately
+repeat is reconstructed. A symmetric five-switch event-to-visible measurement was added **after**, separately
 from, each foreground resource sample for both EXEs; failed/missing samples remain explicit, not zero. Final exact-head
 verification and downloaded release-byte results must supersede this intermediate chronology before publication.
+
+## Final candidate evidence
+
+Run [39108878064](https://github.com/coderunknow/Xtension/actions/runs/39108878064), exact source
+`66da890620b87d3d3799488aba3c5ce95637334f`, completed **success**, all 12 repository jobs:
+
+1. **Static inspection:** local Python API/source mirrors pass: 92 types, 202 StringIds/rows, 803 locals. Windows CI
+   additionally ran the actual PowerShell source checker, compiler language-version and explicit-registration gates.
+   No local Windows execution is claimed. MIT LICENSE is unchanged from baseline; both history logs are append-only.
+2. **Automated regressions/builds:** **101 core tests** (Framework x86 and x64 invocation in static job), **19 synthetic
+   Windows tests per architecture**, actual Framework 4.8/C# 5 x86+x64 EXEs, MSBuild project build. New regressions
+   exercise identical-bounds/different-identity close refusal, press cancellation, settings batch/I/O atomicity,
+   ownership, future-key backup, watcher re-subscription, import-result persistence, per-lane metrics, resource
+   teardown and named-event single instance. These establish the relevant D5-01–15 source fixes; hooks/cap filters
+   still have source-only coverage where no dedicated stress test exists.
+3. **CI/package/provenance/performance:** package negative/provenance/checksum tests and file-backed fixture regression
+   passed. Baseline dev4 download matched source `15900f524951b14ec7658e2ddadf07166f10ed3a`, product `0.1.0-dev4`,
+   SHA-256 `35b5a67b2c416666b61d43dc1451e8e17c49c081c65226ec5e8cea407c6cce82`. Performance used one Windows
+   OS `10.0.26100.0`, four logical processors, x64 process, the same pinned Brave, fresh three-blank-tab profiles,
+   default settings, three alternating repetitions, 20 seconds per state/binary after 3-second warmup. CPU is a
+   percentage of one core, not divided by processor count. All 12 resource observations and six reaction summaries
+   were retrieved from three complete bounded annotations, not inferred from a truncated report.
+4. **GUI/real browsers:** Brave `155.1.97.56` and signed Chrome `155.0.8059.40`, x86+x64 shipped candidate EXEs, passed
+   actual visible placement, 24 rapid switches preserving tabs, two windows, focus away/back, modifier refusal,
+   exact runtime-identity single-tab close/cooldown, minimize/restore/move/resize/maximize, many tabs, synthetic long
+   title, hover visibility, configured 40 px fit and restart/corrupt-settings recovery. Chrome default-disabled
+   refusal passed before opt-in. Signed Edge `154.0.4258.62` passed **refusal only** in both architectures: no tree walk,
+   selected target or overlay even when the settings file requests it. Firefox not executed/supported. Physical
+   mixed-DPI/multiple monitors, native x86 OS, true hung-provider behavior, startup-registry/Shell integration and
+   human icon/diacritics/audio review remain outside these jobs. No mandatory owner session is a release gate.
+
+### Complete repeated resource observations
+
+Units: milliseconds, one-core CPU %, MiB. Resource windows were 20.0–20.6 s. “Scan” is the application's last
+statistics line for that run (p50/p95/max); separate harness environmental scans are not mistaken for product latency.
+Idle scan/counter timing is **n/a**, not the harness's empty-list `0.0`. Zero refusals/stales/discards/errors/stalls
+were recorded for every foreground product sample; queue p95 was 0–1 ms, retained completed samples 28–31.
+
+| State | Repeat | Binary | Ready | CPU | Working/private | Handles | Product scan p50/p95/max |
+| --- | --- | --- | ---: | ---: | --- | ---: | --- |
+| Idle | 1 | dev4 | 114 | 0.08 | 33.5/25.0 | 325 | n/a |
+| Idle | 1 | candidate | 205 | 0.00 | 33.8/24.9 | 325 | n/a |
+| Idle | 2 | dev4 | 115 | 0.08 | 33.5/24.9 | 325 | n/a |
+| Idle | 2 | candidate | 204 | 0.08 | 33.8/25.0 | 325 | n/a |
+| Idle | 3 | dev4 | 213 | 0.00 | 33.5/25.0 | 325 | n/a |
+| Idle | 3 | candidate | 119 | 0.08 | 33.8/25.0 | 325 | n/a |
+| Foreground | 1 | dev4 | 205 | 3.74 | 54.3/38.4 | 422 | 67/73/129 |
+| Foreground | 1 | candidate | 209 | 4.34 | 54.3/38.3 | 421 | 67/90/99 |
+| Foreground | 2 | dev4 | 218 | 4.27 | 54.4/38.4 | 421 | 69/96/100 |
+| Foreground | 2 | candidate | 214 | 3.97 | 54.4/38.3 | 421 | 70/93/103 |
+| Foreground | 3 | dev4 | 204 | 3.89 | 53.9/38.3 | 422 | 70/88/104 |
+| Foreground | 3 | candidate | 210 | 4.86 | 54.4/38.4 | 421 | 69/98/107 |
+
+After each foreground CPU/memory window, five native Ctrl+Tab inputs were timed to observed changed-overlay bounds,
+then checked against the newly selected runtime identity and exact geometry. All **30/30** reaction observations
+succeeded. Nearest-rank p95 of five equals that repetition's maximum; these are coarse harness observations sampled
+about every 10 ms, not physical display latency, UIA-event delivery latency alone or close-validation latency.
+
+| Repeat | dev4 n / p50 / p95 / max ms | Candidate n / p50 / p95 / max ms |
+| --- | --- | --- |
+| 1 | 5 / 103 / 115 / 115 | 5 / 101 / 119 / 119 |
+| 2 | 5 / 100 / 116 / 116 | 5 / 106 / 126 / 126 |
+| 3 | 5 / 110 / 115 / 115 | 5 / 107 / 115 / 115 |
+
+**Interpretation, not a speedup claim:** startup ranges overlap (idle dev4 114–213 vs candidate 119–205 ms;
+foreground 204–218 vs 209–214). Foreground median CPU is 3.89 vs 4.34% of one core, and median reported scan p95
+88 vs 93 ms; candidate values are not an improvement. Ranges overlap and three short shared-runner repetitions
+cannot establish a statistical regression or cause. Extra diagnostics work exists in source, but is not profiled as
+the cause. Working/private memory and handles are comparable in these observations (idle working set +0.3 MiB in
+candidate). Reaction p50 ranges overlap 100–110 vs 101–107 ms, while candidate p95 reaches 126 vs 116 ms. No claim
+of measured latency improvement, zero overhead or universal non-regression is made. Follow-up: longer repeated
+controlled desktop sampling/profiling before optimizing diagnostics; never loosen freshness/deadlines for speed.
+
+### Final source and publication gates
+
+The recorded successful run is the full implemented candidate, not a cancelled/incomplete run. Subsequent evidence
+wording/docs changes require another exact-head PR CI. Its result, normal merge SHA, merged-main CI, immutable tag,
+release workflow and downloaded release-byte hashes are recorded on [PR #6](https://github.com/coderunknow/Xtension/pull/6)
+and in the final delivery report to avoid claiming a future result or a self-referential commit hash. D5-13's publication
+workflow implementation is not end-to-end accepted until that release actually completes. No old tag/asset is replaced.
