@@ -58,7 +58,7 @@ jobs:
         run: ./scripts/verify-source.ps1
       - name: Run unit tests
         shell: pwsh
-        run: ./scripts/test.ps1
+        run: ./scripts/test.ps1 -Arch ${{ matrix.arch }}
       - name: Build Xtension (${{ matrix.arch }})
         shell: pwsh
         run: ./scripts/build.ps1 -Arch ${{ matrix.arch }}

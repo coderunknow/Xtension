@@ -4,6 +4,8 @@
 .NOTES
   Output: dist/tests/Xtension.Tests.exe. Exit code is non-zero if any test fails.
 #>
+[CmdletBinding()]
+param([ValidateSet('x86', 'x64')][string]$Arch = 'x64')
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $root = Split-Path -Parent $PSScriptRoot
@@ -16,7 +18,7 @@ try {
     $csc = Join-Path $framework 'csc.exe'
     $testDir = Join-Path $root 'dist\tests'
     New-Item -ItemType Directory -Force -Path $testDir | Out-Null
-    $output = Join-Path $testDir 'Xtension.Tests.exe'
+    $output = Join-Path $testDir "Xtension.Tests-$Arch.exe"
     if (Test-Path -LiteralPath $output) { Remove-Item -LiteralPath $output -Force }
 
     $coreSources = @(Get-ChildItem -LiteralPath (Join-Path $root 'src\Core') -Filter '*.cs' -File | ForEach-Object { $_.FullName })
@@ -26,7 +28,7 @@ try {
     Write-Host ("Compiling " + $coreSources.Count + " core and " + $testSources.Count + " test files with " + $csc)
 
     $arguments = @(
-        '/nologo', '/codepage:65001', '/target:exe', '/debug:pdbonly', '/langversion:5', '/warn:4',
+        '/nologo', '/codepage:65001', '/target:exe', '/debug:pdbonly', '/langversion:5', '/warn:4', "/platform:$Arch",
         '/r:System.dll', '/r:System.Drawing.dll',
         "/out:$output"
     ) + $coreSources + $testSources + @($generated)

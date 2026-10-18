@@ -2,7 +2,7 @@
 
 Xtension is a small Windows tray app for supported browsers. It shows one custom **×** on the selected horizontal tab, so you do not close a tab by accident. The × moves when you change tabs. It appears only when Xtension can confirm which tab is active.
 
-> **Status: `v0.1.0-dev5` candidate — release gates in progress.** This version strengthens exact-tab closing,
+> **`v0.1.0-dev5` prerelease — Windows only.** This version strengthens exact-tab closing,
 > transactional settings and event recovery, adds forward-compatible backups, and adds independently tested opt-in
 > Chrome alongside Brave. Edge failed acceptance and is explicitly disabled. See [`docs/DEV5_AUDIT.md`](docs/DEV5_AUDIT.md) for actual acceptance state and remaining
 > limitations. Source and a build are not proof of GUI behavior. Publication is confirmed only on the

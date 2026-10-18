@@ -32,13 +32,16 @@ jobs:
         run: ./scripts/verify-source.ps1
       - name: Run unit tests (pure core)
         shell: pwsh
-        run: ./scripts/test.ps1
+        run: |
+          ./scripts/test.ps1 -Arch x86
+          ./scripts/test.ps1 -Arch x64
 
       - name: Windows PowerShell 5.1 source and test parity
         shell: powershell
         run: |
           ./scripts/verify-source.ps1
-          ./scripts/test.ps1
+          ./scripts/test.ps1 -Arch x86
+          ./scripts/test.ps1 -Arch x64
           ./scripts/test-fixture-process.ps1
 
   build:
